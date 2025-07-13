@@ -1,0 +1,43 @@
+### Python通用配置 ###
+__pycache__/   # 忽略Python字节码缓存目录
+*.py[cod]      # 忽略所有.pyc/.pyo/.pyd文件
+*.egg-info/    # 忽略setuptools生成的包信息
+*.egg          # 忽略旧版setuptools生成的包
+.pytest_cache/ # 忽略pytest缓存
+*.py[oc]
+
+### 虚拟环境 ###
+venv/          # 虚拟环境目录
+.env/          # 虚拟环境目录（常见命名）
+.venv/         # 虚拟环境目录（常见命名）
+env/           # 虚拟环境目录（常见命名）
+venv.bak/      # 虚拟环境备份
+
+### 包管理文件 ###
+pip-selfcheck.json  # pip自检文件
+Pipfile.lock        # pipenv生成（按需添加）
+poetry.lock         # poetry生成（按需添加）
+
+### 开发环境配置 ###
+.idea/         # PyCharm配置
+.vscode/       # VS Code配置
+.DS_Store      # macOS文件属性缓存
+*.swp          # Vim临时文件
+*.swo          # Vim临时文件
+
+### 构建和测试输出 ###
+build/         # 构建输出目录
+dist/          # 分发包目录
+.coverage      # 测试覆盖率报告
+htmlcov/       # HTML覆盖率报告
+.pytest_cache/ # pytest缓存
+test_output/   # 自定义测试输出目录
+.coverage.*    # 临时覆盖率文件
+wheels/
+
+### 日志文件 ###
+log/          # 日志目录
+logs/          # 日志目录
+*.iml
+*.xml
+*.log
