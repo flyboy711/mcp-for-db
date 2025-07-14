@@ -220,3 +220,5 @@ urllib3==2.5.0
     # via requests
 uvicorn==0.35.0
     # via mcp
+
+sqlparse~=0.5.2

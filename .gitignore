@@ -19,6 +19,7 @@ Pipfile.lock        # pipenv生成（按需添加）
 poetry.lock         # poetry生成（按需添加）
 
 ### 开发环境配置 ###
+.idea
 .idea/         # PyCharm配置
 .vscode/       # VS Code配置
 .DS_Store      # macOS文件属性缓存

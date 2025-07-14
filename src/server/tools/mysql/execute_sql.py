@@ -101,12 +101,6 @@ class ExecuteSQL(BaseHandler):
                     "query": {
                         "type": "string",
                         "description": "SQL statement to execute. Use ? for parameter placeholders."
-                    },
-                    "parameters": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Values for parameter placeholders",
-                        "default": []
                     }
                 },
                 "required": ["query"]

@@ -2,94 +2,128 @@ import logging
 import aiomysql
 import asyncio
 import hashlib
-from typing import AsyncGenerator, Optional, Dict, Any
-from server.config import MySQLConfigManager, EnvFileManager
+import time
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator, Optional, Dict, Any, List, Union
+from enum import Enum
+
+from server.config import AppConfigManager
+from server.security.sql_interceptor import SQLInterceptor, SecurityException
+from server.security.sql_parser import SQLParser
+from server.security.sql_analyzer import SQLRiskAnalyzer
+from server.security.db_scope_check import DatabaseScopeChecker, DatabaseScopeViolation
 from server.utils.logger import get_logger, configure_logger
 
 logger = get_logger(__name__)
 configure_logger(log_level=logging.INFO, log_filename="database.log")
 
 
-def _get_config_hash(config: Dict[str, Any]) -> str:
-    """生成配置哈希用于检测变更"""
-    return hashlib.md5(str(config).encode('utf-8')).hexdigest()
+class DatabaseConnectionState(Enum):
+    """数据库连接状态枚举"""
+    UNINITIALIZED = 0
+    ACTIVE = 1
+    CLOSED = 2
+    ERROR = 3
+    RECONNECTING = 4
 
 
-class MySQLPoolManager:
-    """数据库连接池管理器，支持配置变更检测和自动重连"""
+class DatabasePermissionError(Exception):
+    """数据库权限错误"""
 
-    # 连接池状态常量
-    STATE_UNINITIALIZED = 0
-    STATE_ACTIVE = 1
-    STATE_CLOSED = 2
-    STATE_ERROR = 3
+    def __init__(self, message: str, operation: str, table: str):
+        super().__init__(message)
+        self.operation = operation
+        self.table = table
+        self.message = message
 
-    def __init__(self, cfg_manager: MySQLConfigManager):
+
+class DatabaseManager:
+    """数据库管理器，集成连接池、安全检查和范围控制"""
+
+    def __init__(self, config_manager: AppConfigManager):
         """
-        初始化连接池管理器
-        :param cfg_manager: 数据库配置管理器实例
+        初始化数据库管理器
+
+        Args:
+            config_manager: 应用配置管理器实例
         """
-        self._config_manager = cfg_manager
-        self._pool: Optional[aiomysql.Pool] = None
-        self._state = self.STATE_UNINITIALIZED
+        self.config = config_manager
+        self._pool = None
+        self._state = DatabaseConnectionState.UNINITIALIZED
         self._config_hash = None
-        self._successful_plugin = None
+        self._successful_auth_plugin = None
+        self._last_connection_time = 0
+        self._reconnect_attempts = 0
+
+        # 初始化安全组件
+        self.sql_parser = SQLParser(config_manager)
+        self.risk_analyzer = SQLRiskAnalyzer(config_manager)
+        self.sql_interceptor = SQLInterceptor(config_manager)
+
+        # 初始化数据库范围检查器
+        self.database_checker = None
+        if config_manager.ENABLE_DATABASE_ISOLATION:
+            self.database_checker = DatabaseScopeChecker(config_manager)
+
+        logger.info("数据库管理器初始化完成")
+
+    def __del__(self):
+        """析构函数，确保连接池被关闭"""
+        if self._pool and not self._pool.closed:
+            try:
+                # 尝试同步关闭连接池
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    loop.create_task(self.close_pool())
+                else:
+                    loop.run_until_complete(self.close_pool())
+            except Exception:
+                # 如果事件循环不可用，直接关闭
+                self._pool.close()
+                logger.warning("在析构函数中强制关闭连接池")
 
     @property
-    def state(self) -> int:
+    def state(self) -> DatabaseConnectionState:
         """返回当前连接池状态"""
         return self._state
 
     async def ensure_pool(self) -> None:
         """确保连接池已初始化并可用"""
-        if self._state in (self.STATE_ACTIVE, self.STATE_ERROR):
+        if self._state in (DatabaseConnectionState.ACTIVE, DatabaseConnectionState.ERROR):
             return
 
-        if self._state == self.STATE_UNINITIALIZED:
-            await self.initialize_pool()
-        elif self._state == self.STATE_CLOSED:
+        if self._state in (DatabaseConnectionState.UNINITIALIZED, DatabaseConnectionState.CLOSED):
             await self.initialize_pool()
 
     async def initialize_pool(self, max_retries: int = 3) -> None:
         """
         初始化或重置数据库连接池
-        :param max_retries: 最大认证尝试次数
+
+        Args:
+            max_retries: 最大重试次数
         """
         # 关闭现有连接池
         await self.close_pool()
 
         logger.info("初始化数据库连接池...")
-        config = self._config_manager.get_config()
-        new_hash = _get_config_hash(config)
+        config = self.config.get_database_config()
+        new_hash = self._get_config_hash(config)
+
+        # 构建连接参数
+        connection_params = self._build_connection_params(config)
 
         # 记录安全的配置信息（不含密码）
         safe_config = {k: v for k, v in config.items() if k != "password"}
         logger.debug(f"连接参数: {safe_config}")
 
-        connection_params = {
-            "host": config["host"],
-            "port": config["port"],
-            "user": config["user"],
-            "password": config["password"],
-            "db": config["database"],
-            "autocommit": True,
-            "minsize": 1,
-            "maxsize": 10,
-            "charset": "utf8mb4",
-            "cursorclass": aiomysql.DictCursor
-        }
-
-        # 优先使用上次成功的认证插件或配置中的插件
-        if self._successful_plugin:
-            connection_params["auth_plugin"] = self._successful_plugin
-            logger.info(f"使用上次成功的认证插件: {self._successful_plugin}")
-
         try:
             # 首次尝试连接
             self._pool = await aiomysql.create_pool(**connection_params)
             logger.info("数据库连接池初始化成功")
-            self._state = self.STATE_ACTIVE
+            self._state = DatabaseConnectionState.ACTIVE
             self._config_hash = new_hash
+            self._last_connection_time = time.time()
+            self._reconnect_attempts = 0
             return
         except aiomysql.OperationalError as e:
             error_msg = str(e).lower()
@@ -98,16 +132,35 @@ class MySQLPoolManager:
             # 如果是认证问题且设置了重试，则尝试不同认证方式
             if "plugin" in error_msg and max_retries > 0:
                 logger.info("尝试备用认证方案...")
-                await self.try_alternative_auth(connection_params, max_retries)
+                await self._try_alternative_auth(connection_params, max_retries)
             else:
-                self._state = self.STATE_ERROR
+                self._state = DatabaseConnectionState.ERROR
+                self._handle_connection_error(e)
                 raise
         except Exception as e:
-            logger.exception(f"数据库连接池初始化失败:{e}")
-            self._state = self.STATE_ERROR
+            logger.exception(f"数据库连接池初始化失败: {e}")
+            self._state = DatabaseConnectionState.ERROR
+            self._handle_connection_error(e)
             raise
 
-    async def try_alternative_auth(self, params: dict, max_retries: int) -> None:
+    def _build_connection_params(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """构建连接参数"""
+        return {
+            "host": config["host"],
+            "port": config["port"],
+            "user": config["user"],
+            "password": config["password"],
+            "db": config["database"],
+            "autocommit": True,
+            "minsize": config.get("db_pool_min_size", 1),
+            "maxsize": config.get("db_pool_max_size", 10),
+            "charset": "utf8mb4",
+            "cursorclass": aiomysql.DictCursor,
+            "connect_timeout": config.get("connection_timeout", 5),
+            "auth_plugin": self._successful_auth_plugin or config.get("auth_plugin", "mysql_native_password")
+        }
+
+    async def _try_alternative_auth(self, params: Dict[str, Any], max_retries: int) -> None:
         """尝试不同的认证方式"""
         plugins = [
             None,  # 自动协商
@@ -118,23 +171,26 @@ class MySQLPoolManager:
 
         for plugin in plugins:
             try:
+                # 更新认证插件参数
+                new_params = params.copy()
                 if plugin:
-                    params["auth_plugin"] = plugin
-                elif "auth_plugin" in params:
-                    del params["auth_plugin"]
+                    new_params["auth_plugin"] = plugin
+                elif "auth_plugin" in new_params:
+                    del new_params["auth_plugin"]
 
                 logger.info(f"尝试认证插件: {plugin or 'auto'}")
-                self._pool = await aiomysql.create_pool(**params)
+                self._pool = await aiomysql.create_pool(**new_params)
 
                 logger.info(f"使用插件 {plugin or 'auto'} 连接成功")
-                self._state = self.STATE_ACTIVE
-                self._successful_plugin = plugin
+                self._state = DatabaseConnectionState.ACTIVE
+                self._successful_auth_plugin = plugin
+                self._last_connection_time = time.time()
+                self._reconnect_attempts = 0
 
                 # 如果成功使用特定插件，更新配置
                 if plugin:
-                    # 使用配置管理类而不是直接调用update_env_file
-                    EnvFileManager.update({"MYSQL_AUTH_PLUGIN": plugin})
-
+                    # 使用配置管理类更新环境变量
+                    self.config.update_env({"DB_AUTH_PLUGIN": plugin})
                 return
             except Exception as e:
                 logger.warning(f"插件 {plugin} 失败: {str(e)}")
@@ -143,12 +199,40 @@ class MySQLPoolManager:
                     break
 
         logger.critical("所有认证方式尝试失败")
-        self._state = self.STATE_ERROR
+        self._state = DatabaseConnectionState.ERROR
         raise ConnectionError("无法连接数据库，请检查服务器配置")
+
+    def _handle_connection_error(self, error: Exception) -> None:
+        """处理连接错误"""
+        error_msg = str(error).lower()
+
+        # 根据错误类型提供更具体的建议
+        if "access denied" in error_msg:
+            logger.error("访问被拒绝，请检查用户名和密码")
+        elif "unknown database" in error_msg:
+            db_name = self.config.MYSQL_DATABASE
+            logger.error(f"数据库 '{db_name}' 不存在")
+        elif "can't connect" in error_msg or "connection refused" in error_msg:
+            logger.error("无法连接到MySQL服务器，请检查服务是否启动")
+        elif "authentication plugin" in error_msg:
+            current_auth = self.config.DB_AUTH_PLUGIN
+            logger.error(f"认证插件问题: {error_msg}")
+            if current_auth == 'caching_sha2_password':
+                logger.error("解决方案:")
+                logger.error("1. 确保已安装 cryptography 包: pip install cryptography")
+                logger.error("2. 或者修改用户认证方式为 mysql_native_password")
+                logger.error(f"3. 在配置中设置 DB_AUTH_PLUGIN=mysql_native_password")
+
+        # 增加重连尝试计数
+        self._reconnect_attempts += 1
+
+        # 如果重连次数过多，记录警告
+        if self._reconnect_attempts > 3:
+            logger.warning("数据库连接失败次数过多，请检查数据库配置和服务状态")
 
     async def close_pool(self) -> None:
         """安全关闭数据库连接池"""
-        if not self._pool or self._state in (self.STATE_CLOSED, self.STATE_UNINITIALIZED):
+        if not self._pool or self._state in (DatabaseConnectionState.CLOSED, DatabaseConnectionState.UNINITIALIZED):
             return
 
         logger.info("关闭数据库连接池...")
@@ -157,6 +241,7 @@ class MySQLPoolManager:
             self._pool.close()
             await self._pool.wait_closed()
             logger.info("连接池已安全关闭")
+            self._state = DatabaseConnectionState.CLOSED
         except RuntimeError as e:
             if "Event loop is closed" in str(e):
                 logger.warning("无法安全关闭连接池：事件循环已结束")
@@ -168,99 +253,476 @@ class MySQLPoolManager:
             logger.exception(f"关闭连接池时出错: {str(e)}")
         finally:
             self._pool = None
-            self._state = self.STATE_CLOSED
 
+    @asynccontextmanager
     async def get_connection(self) -> AsyncGenerator[aiomysql.Connection, None]:
         """
-        获取数据库连接
-        添加了连接池状态检查和自动重连机制
+        获取数据库连接的异步上下文管理器
+
+        Yields:
+            aiomysql.Connection: 数据库连接对象
         """
         # 确保连接池可用
         await self.ensure_pool()
 
         # 检查配置是否变更
-        current_config = self._config_manager.get_config()
-        current_hash = _get_config_hash(current_config)
+        current_config = self.config.get_database_config()
+        current_hash = self._get_config_hash(current_config)
 
-        if current_hash != self._config_hash and self._state == self.STATE_ACTIVE:
+        if current_hash != self._config_hash and self._state == DatabaseConnectionState.ACTIVE:
             logger.warning("数据库配置已变更，正在重建连接池...")
             await self.initialize_pool()
 
         # 确保连接池不为空
-        if not self._pool or self._state != self.STATE_ACTIVE:
+        if not self._pool or self._state != DatabaseConnectionState.ACTIVE:
             raise RuntimeError("数据库连接池不可用")
 
-        # 获取连接
-        async with self._pool.acquire() as conn:
-            yield conn
+        try:
+            # 获取连接
+            async with self._pool.acquire() as conn:
+                yield conn
+        except aiomysql.Error as e:
+            logger.error(f"获取数据库连接失败: {str(e)}")
+            self._handle_connection_error(e)
+            raise
+        except Exception as e:
+            logger.exception(f"获取数据库连接时发生未预期错误: {str(e)}")
+            raise
+
+    ########################################################################################################################
+    async def execute_query(self, sql_query: str, params: Optional[Dict[str, Any]] = None,
+                            require_database: bool = True, stream_results: bool = False,
+                            batch_size: int = 1000) -> Union[
+        List[Dict[str, Any]], AsyncGenerator[List[Dict[str, Any]], None]]:
+        """
+        执行SQL查询，包含全面的安全检查和范围控制
+
+        Args:
+            sql_query: SQL查询语句
+            params: 查询参数 (可选)
+            require_database: 是否要求指定数据库
+            stream_results: 是否使用流式处理获取大型结果集
+            batch_size: 流式处理的批次大小
+
+        Returns:
+            查询结果列表或结果生成器
+
+        Raises:
+            SecurityException: 当操作被安全机制拒绝时
+            DatabaseScopeViolation: 当违反数据库范围限制时
+            DatabasePermissionError: 当用户没有执行操作的权限时
+        """
+        start_time = time.time()
+
+        try:
+            # 安全检查
+            await self.sql_interceptor.check_operation(sql_query)
+
+            # 数据库范围检查
+            if self.database_checker:
+                self.database_checker.enforce_query(sql_query)
+
+            # 解析SQL以获取操作类型和表名
+            parsed_sql = self.sql_parser.parse_query(sql_query)
+            operation = parsed_sql['operation_type']
+            category = parsed_sql['category']
+            tables = parsed_sql['tables']
+
+            # 权限模拟检查（在实际执行前）
+            if operation in {'INSERT', 'UPDATE', 'DELETE', 'DROP', 'TRUNCATE', 'ALTER'}:
+                # 记录权限警告（实际权限检查在数据库执行）
+                logger.warning(f"执行 {operation} 操作在表 {', '.join(tables)} 上，请确保用户有足够权限")
+
+            async with self.get_connection() as conn:
+                # 创建游标
+                async with conn.cursor(aiomysql.DictCursor) as cursor:
+                    # 执行查询
+                    if params:
+                        await cursor.execute(sql_query, params)
+                    else:
+                        await cursor.execute(sql_query)
+
+                    # 处理结果
+                    if cursor.description:
+                        # SELECT查询，获取结果
+                        if stream_results:
+                            # 流式处理大型结果集
+                            return self._stream_results(cursor, batch_size, sql_query, operation)
+                        else:
+                            # 一次性获取所有结果
+                            results = await cursor.fetchall()
+                            return self._process_results(results, sql_query, operation, category)
+                    else:
+                        # DML/DDL操作，返回影响行数
+                        affected_rows = cursor.rowcount
+
+                        # 对于修改操作，提交事务
+                        if category == 'DML' and operation in {'UPDATE', 'DELETE', 'INSERT'}:
+                            await conn.commit()
+
+                        return self._process_dml_result(affected_rows, sql_query, operation)
+        except aiomysql.OperationalError as e:
+            # 处理权限错误
+            error_code = e.args[0] if e.args else 0
+            if error_code in (1142, 1044, 1045):  # 常见的权限错误代码
+                parsed_sql = self.sql_parser.parse_query(sql_query)
+                raise DatabasePermissionError(
+                    f"数据库权限错误: {str(e)}",
+                    parsed_sql['operation_type'],
+                    ", ".join(parsed_sql['tables'])
+                )
+            else:
+                logger.exception(f"查询执行失败: {str(e)}")
+                raise
+        except SecurityException as se:
+            logger.error(f"安全拦截: {se.message}")
+            raise
+        except DatabaseScopeViolation as dve:
+            logger.error(f"数据库范围违规: {dve.message}")
+            for violation in dve.violations:
+                logger.error(f" - {violation}")
+            raise
+        except Exception as e:
+            logger.exception(f"查询执行失败: {str(e)}")
+            raise
+        finally:
+            # 记录查询性能
+            execution_time = time.time() - start_time
+            self._log_query_performance(sql_query, execution_time)
+
+    async def _stream_results(self, cursor: aiomysql.Cursor, batch_size: int,
+                              sql_query: str, operation: str) -> AsyncGenerator[List[Dict[str, Any]], None]:
+        """
+        流式处理查询结果
+
+        Args:
+            cursor: 数据库游标
+            batch_size: 批次大小
+            sql_query: SQL查询语句
+            operation: 操作类型
+
+        Yields:
+            结果批次列表
+        """
+        total_fetched = 0
+        logger.debug(f"开始流式处理查询: {sql_query[:100]}...")
+
+        while True:
+            batch = await cursor.fetchmany(batch_size)
+            if not batch:
+                break
+
+            # 处理结果
+            processed_batch = self._process_batch(batch, operation)
+            total_fetched += len(processed_batch)
+            logger.debug(f"已获取 {total_fetched} 条记录")
+
+            yield processed_batch
+
+            # 检查是否还有剩余结果
+            if len(batch) < batch_size:
+                break
+
+        logger.debug(f"流式查询总共返回 {total_fetched} 条结果")
+
+    def _process_batch(self, batch: List[Dict[str, Any]], operation: str) -> List[Dict[str, Any]]:
+        """
+        处理结果批次
+
+        Args:
+            batch: 结果批次
+            operation: 操作类型
+
+        Returns:
+            处理后的结果列表
+        """
+        # 对于元数据查询，增强结果
+        if operation in {'SHOW', 'DESCRIBE', 'EXPLAIN'}:
+            return self._enhance_metadata_results(batch, operation)
+        return [dict(row) for row in batch]
+
+    def _enhance_metadata_results(self, results: List[Dict[str, Any]], operation: str) -> List[Dict[str, Any]]:
+        """
+        增强元数据查询结果
+
+        Args:
+            results: 原始结果列表
+            operation: 操作类型
+
+        Returns:
+            增强后的结果列表
+        """
+        enhanced = []
+        for row in results:
+            row_dict = dict(row)
+
+            # 对特定元数据查询进行增强
+            if operation == 'SHOW':
+                # 检查是否是 SHOW TABLES 结果
+                for key in list(row_dict.keys()):
+                    if key.startswith('Tables_in_'):
+                        # 添加统一的 table_name 字段
+                        row_dict['table_name'] = row_dict[key]
+                        # 保留原始字段
+                        row_dict['database'] = key.replace('Tables_in_', '')
+                        break
+            elif operation in {'DESC', 'DESCRIBE'} and 'Field' in row_dict:
+                # DESC/DESCRIBE 表结构结果增强
+                row_dict['column_name'] = row_dict['Field']
+                row_dict['data_type'] = row_dict['Type']
+
+            enhanced.append(row_dict)
+        return enhanced
+
+    def _process_results(self, results: List[Dict[str, Any]], sql_query: str,
+                         operation: str, category: str) -> List[Dict[str, Any]]:
+        """
+        处理查询结果
+
+        Args:
+            results: 原始结果
+            sql_query: SQL查询语句
+            operation: 操作类型
+            category: 操作类别
+
+        Returns:
+            处理后的结果列表
+        """
+        # 对于元数据查询，增强结果
+        if category == 'METADATA':
+            return self._enhance_metadata_results(results, operation)
+
+        # 对于空结果集，添加元信息
+        if not results:
+            return [{'operation': operation, 'result_count': 0}]
+
+        return [dict(row) for row in results]
+
+    def _process_dml_result(self, affected_rows: int, sql_query: str, operation: str) -> List[Dict[str, Any]]:
+        """
+        处理DML操作结果
+
+        Args:
+            affected_rows: 影响行数
+            sql_query: SQL查询语句
+            operation: 操作类型
+
+        Returns:
+            结果字典列表
+        """
+        logger.debug(f"{operation} 操作影响了 {affected_rows} 行数据")
+        return [{"operation": operation, "affected_rows": affected_rows}]
+
+    async def execute_transaction(self, queries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        在事务中执行多个查询
+
+        Args:
+            queries: 查询列表，每个元素是包含 'query' 和可选 'params' 的字典
+
+        Returns:
+            每个查询的结果列表
+        """
+        results = []
+        async with self.get_connection() as conn:
+            try:
+                # 开始事务
+                await conn.begin()
+
+                for query_item in queries:
+                    sql = query_item['query']
+                    params = query_item.get('params')
+
+                    # 执行单个查询
+                    result = await self.execute_query(sql, params)
+                    results.append(result)
+
+                # 提交事务
+                await conn.commit()
+                return results
+            except Exception:
+                # 回滚事务
+                await conn.rollback()
+                logger.error("事务执行失败，已回滚")
+                raise
+
+    def _get_config_hash(self, config: Dict[str, Any]) -> str:
+        """生成配置哈希用于检测变更"""
+        return hashlib.md5(str(config).encode('utf-8')).hexdigest()
+
+    def _log_query_performance(self, query: str, execution_time: float):
+        """记录查询性能日志"""
+        # 截断长查询以避免日志过大
+        truncated_query = query[:150] + '...' if len(query) > 150 else query
+
+        # 解析操作类型
+        try:
+            parsed = self.sql_parser.parse_query(query)
+            operation = parsed.get('operation_type', 'UNKNOWN')
+        except Exception:
+            operation = 'UNKNOWN'
+
+        # 根据执行时间确定日志级别
+        if execution_time >= 1.0:  # 超过1秒的查询记录为警告
+            logger.warning(f"慢查询 [{operation}]: {truncated_query} 执行时间: {execution_time:.4f}秒")
+        elif execution_time >= 0.5:  # 超过0.5秒的查询记录为提醒
+            logger.info(f"较慢查询 [{operation}]: {truncated_query} 执行时间: {execution_time:.4f}秒")
+        else:
+            logger.debug(f"查询 [{operation}] 执行时间: {execution_time:.4f}秒")
 
     def is_healthy(self) -> bool:
         """检查连接池是否健康"""
-        return self._state == self.STATE_ACTIVE and self._pool is not None
+        return self._state == DatabaseConnectionState.ACTIVE and self._pool is not None
+
+    async def reconnect(self) -> None:
+        """尝试重新连接数据库"""
+        if self._state != DatabaseConnectionState.ERROR:
+            return
+
+        logger.info("尝试重新连接数据库...")
+        self._state = DatabaseConnectionState.RECONNECTING
+
+        try:
+            await self.initialize_pool()
+            logger.info("数据库重新连接成功")
+        except Exception as e:
+            logger.error(f"数据库重新连接失败: {str(e)}")
+            self._state = DatabaseConnectionState.ERROR
+
+    async def get_database_info(self) -> Dict[str, Any]:
+        """获取数据库信息"""
+        try:
+            result = await self.execute_query("SELECT VERSION() AS version")
+            version = result[0]['version'] if result else "Unknown"
+
+            return {
+                "version": version,
+                "status": self._state.name,
+                "last_connection": self._last_connection_time,
+                "reconnect_attempts": self._reconnect_attempts
+            }
+        except Exception as e:
+            logger.error(f"获取数据库信息失败: {str(e)}")
+            return {
+                "error": str(e),
+                "status": self._state.name
+            }
+
+    async def get_current_database(self) -> str:
+        """
+        获取当前连接的数据库名称
+
+        Returns:
+            当前数据库名称，如果未设置则返回空字符串
+        """
+        try:
+            result = await self.execute_query("SELECT DATABASE() AS db", require_database=False)
+            if result and 'db' in result[0]:
+                return result[0]['db'] or ""
+            return ""
+        except Exception as e:
+            logger.error(f"获取当前数据库名称失败: {str(e)}")
+            return ""
 
 
-# 全局实例
-config_manager = MySQLConfigManager()
-mysql_pool_manager = MySQLPoolManager(config_manager)
+# 全局数据库管理器实例
+config_manager = AppConfigManager()
+database_manager = DatabaseManager(config_manager)
 
 
 # 测试代码
-async def test_database_connection():
-    """测试数据库连接，增加更多测试场景"""
-    logger.info("\n=== 启动数据库连接测试 ===")
+async def test_database_operations():
+    """测试数据库操作"""
+    logger.info("\n=== 启动数据库操作测试 ===")
 
     try:
-        # 场景1: 初始连接
-        logger.info("测试场景1: 初始连接")
-        await mysql_pool_manager.initialize_pool()
-        logger.info("✅ 初始连接成功")
+        # 场景1: 获取数据库信息
+        logger.info("测试场景1: 获取数据库信息")
+        db_info = await database_manager.get_database_info()
+        logger.info(f"数据库信息: {db_info}")
 
-        # 场景2: 获取连接并执行查询
-        logger.info("\n测试场景2: 获取连接并执行查询")
-        async for conn in mysql_pool_manager.get_connection():
-            async with conn.cursor() as cursor:
-                await cursor.execute("SELECT VERSION()")
-                version = await cursor.fetchone()
-                logger.info(f"✅ 数据库版本: {version['VERSION()']}")
+        # 场景2: 获取当前数据库名称
+        logger.info("\n测试场景2: 获取当前数据库名称")
+        current_db = await database_manager.get_current_database()
+        logger.info(f"当前数据库: {current_db}")
 
-        # 场景3: 模拟认证失败后的恢复
-        logger.info("\n测试场景3: 模拟认证失败恢复")
+        # 场景3: 执行简单查询
+        logger.info("\n测试场景3: 执行简单查询")
+        result = await database_manager.execute_query("SELECT VERSION() AS version")
+        logger.info(f"数据库版本: {result[0]['version']}")
 
-        # 故意使用错误的插件
-        original_plugin = config_manager.get_config().get("auth_plugin")
-        EnvFileManager.update({"MYSQL_AUTH_PLUGIN": "invalid_plugin"})
-        config_manager._load_config()  # 重新加载配置
+        # 场景4: 测试流式查询
+        logger.info("\n测试场景4: 测试流式查询")
+        async for batch in database_manager.execute_query(
+                "SELECT * FROM large_table",
+                stream_results=True,
+                batch_size=100
+        ):
+            logger.info(f"获取到 {len(batch)} 条记录")
 
+        # 场景5: 测试元数据查询增强
+        logger.info("\n测试场景5: 测试元数据查询增强")
+        result = await database_manager.execute_query("SHOW TABLES")
+        for row in result:
+            logger.info(f"表名: {row.get('table_name', row.get('Tables_in_test', '未知'))}")
+
+        # 场景6: 测试DML操作
+        logger.info("\n测试场景6: 测试DML操作")
         try:
-            await mysql_pool_manager.initialize_pool()
-        except ConnectionError:
-            logger.info("✅ 成功检测到无效插件错误")
+            result = await database_manager.execute_query("INSERT INTO test (name) VALUES ('test1')")
+            logger.info(f"插入操作结果: {result}")
+        except DatabasePermissionError as dpe:
+            logger.info(f"✅ 权限错误处理成功: {dpe.message}")
+            logger.info(f"操作: {dpe.operation}, 表: {dpe.table}")
 
-            # 恢复原始配置
-            if original_plugin:
-                EnvFileManager.update({"MYSQL_AUTH_PLUGIN": original_plugin})
-            else:
-                # 如果原始没有设置，删除该配置项
-                EnvFileManager.update({"MYSQL_AUTH_PLUGIN": ""})
+        # 场景7: 测试安全拦截
+        logger.info("\n测试场景7: 测试安全拦截")
+        try:
+            await database_manager.execute_query("DROP TABLE important_table")
+        except SecurityException as se:
+            logger.info(f"✅ 安全拦截成功: {se.message}")
 
-            config_manager._load_config()
-            await mysql_pool_manager.initialize_pool()
-            logger.info("✅ 成功恢复连接")
+        # 场景8: 测试数据库范围检查
+        logger.info("\n测试场景8: 测试数据库范围检查")
+        if config_manager.ENABLE_DATABASE_ISOLATION:
+            try:
+                await database_manager.execute_query("SELECT * FROM other_db.users")
+            except DatabaseScopeViolation as dve:
+                logger.info(f"✅ 数据库范围检查成功: {dve.message}")
 
-        # 场景4: 健康检查
-        logger.info("\n测试场景4: 健康检查")
-        if mysql_pool_manager.is_healthy():
-            logger.info("✅ 连接池健康状态正常")
-        else:
-            logger.error("❌ 连接池健康状态异常")
+        # 场景9: 测试连接恢复
+        logger.info("\n测试场景9: 测试连接恢复")
+        # 模拟连接失败
+        database_manager._state = DatabaseConnectionState.ERROR
+        await database_manager.reconnect()
+        db_info = await database_manager.get_database_info()
+        logger.info(f"重新连接后数据库状态: {db_info['status']}")
 
     except Exception as e:
         logger.exception(f"❌ 测试失败: {str(e)}")
     finally:
         # 清理
-        await mysql_pool_manager.close_pool()
+        await database_manager.close_pool()
         logger.info("=== 测试完成 ===")
 
 
+async def main():
+    try:
+        # 获取当前数据库名称
+        current_db = await database_manager.get_current_database()
+        print(f"当前数据库: {current_db}")
+
+        # 执行元数据查询
+        tables = await database_manager.execute_query("SHOW TABLES")
+        for table in tables:
+            # 使用增强后的 table_name 字段
+            table_name = table.get('table_name', table.get('Tables_in_' + current_db.lower(), '未知表名'))
+            print(f"表名: {table_name}")
+    finally:
+        # 确保关闭连接池
+        await database_manager.close_pool()
+
+
 if __name__ == "__main__":
-    asyncio.run(test_database_connection())
+    # asyncio.run(test_database_operations())
+    asyncio.run(main())
