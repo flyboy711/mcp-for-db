@@ -342,10 +342,10 @@ async def test_sql_interceptor():
 
     # 测试用例
     test_cases = [
-        ("SELECT * FROM users", "简单SELECT查询"),
-        ("DROP TABLE users", "危险DROP操作"),
-        ("UPDATE products SET price = price * 1.1", "无WHERE条件的UPDATE"),
-        ("SELECT * FROM other_db.customers", "跨数据库查询"),
+        ("SELECT * FROM t_users", "简单SELECT查询"),
+        ("DROP TABLE _users", "危险DROP操作"),
+        ("UPDATE t_users SET age = age * 1.1", "无WHERE条件的UPDATE"),
+        ("SELECT * FROM tpch_tiny.orders", "跨数据库查询"),
         ("SHOW DATABASES", "元数据查询"),
         ("", "空查询"),
         ("A" * (config_manager.MAX_SQL_LENGTH + 100), "超长SQL查询")
@@ -358,11 +358,11 @@ async def test_sql_interceptor():
         try:
             result = await interceptor.check_operation(sql)
             if result['is_allowed']:
-                logger.info("✅ SQL操作允许执行")
+                logger.info("SQL操作允许执行")
             else:
-                logger.warning(f"❌ SQL操作被拒绝: {result['violations']}")
+                logger.warning(f"SQL操作被拒绝: {result['violations']}")
         except Exception as e:
-            logger.error(f"❌ 测试失败: {str(e)}")
+            logger.error(f"测试失败: {str(e)}")
 
         logger.info("-" * 50)
 

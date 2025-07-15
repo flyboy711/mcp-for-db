@@ -3,9 +3,9 @@ from typing import Dict, Any, Sequence
 from mcp import Tool
 from mcp.types import TextContent
 
-from server.config import MySQLConfigManager, EnvFileManager
+from server.config import AppConfigManager, EnvFileManager
 from server.tools.mysql.base import BaseHandler
-from server.config.database import mysql_pool_manager
+from server.config.database import database_manager
 from server.utils.logger import get_logger, configure_logger
 
 logger = get_logger(__name__)
@@ -56,7 +56,7 @@ class SwitchDatabase(BaseHandler):
         """
         try:
             # 1. 权限验证 - 只有admin角色可以切换数据库
-            current_role = MySQLConfigManager().get_config().get("role", "readonly")
+            current_role = AppConfigManager().get_database_config().get("role", "readonly")
             if current_role != "admin":
                 return [TextContent(type="text",
                                     text="权限不足: 只有管理员角色可以切换数据库配置")]
@@ -127,8 +127,8 @@ class SwitchDatabase(BaseHandler):
     @staticmethod
     async def _reinitialize_db_pool(self) -> None:
         """重新初始化数据库连接池"""
-        if hasattr(mysql_pool_manager, "close_pool") and callable(mysql_pool_manager.close_pool):
-            await mysql_pool_manager.close_pool()
+        if hasattr(database_manager, "close_pool") and callable(database_manager.close_pool):
+            await database_manager.close_pool()
 
-        if hasattr(mysql_pool_manager, "initialize_pool") and callable(mysql_pool_manager.initialize_pool):
-            await mysql_pool_manager.initialize_pool()
+        if hasattr(database_manager, "initialize_pool") and callable(database_manager.initialize_pool):
+            await database_manager.initialize_pool()

@@ -6,7 +6,7 @@ from mcp import Tool
 from mcp.types import TextContent
 
 from server.tools.mysql.base import BaseHandler
-from server.config import MySQLConfigManager
+from server.config import AppConfigManager
 from server.tools.mysql import ExecuteSQL
 
 logger = get_logger(__name__)
@@ -56,7 +56,7 @@ class GetTableDesc(BaseHandler):
 
             text = arguments["text"]
 
-            config = MySQLConfigManager().get_config()
+            config = AppConfigManager().get_database_config()
             execute_sql = ExecuteSQL()
 
             # 将输入的表名按逗号分割成列表
@@ -117,7 +117,7 @@ class GetTableIndex(BaseHandler):
 
             text = arguments["text"]
 
-            config = MySQLConfigManager().get_config()
+            config = AppConfigManager().get_database_config()
             execute_sql = ExecuteSQL()
 
             # 将输入的表名按逗号分割成列表
@@ -290,7 +290,7 @@ class GetTableName(BaseHandler):
                 raise ValueError("缺少查询语句")
 
             text = arguments["text"]
-            config = MySQLConfigManager().get_config()
+            config = AppConfigManager().get_database_config()
             execute_sql = ExecuteSQL()
 
             # 使用参数化查询防止SQL注入
@@ -338,7 +338,7 @@ class GetDatabaseInfo(BaseHandler):
         """获取数据库基本信息"""
         try:
             include_connection = arguments.get("include_connection_info", True)
-            config = MySQLConfigManager().get_config()
+            config = AppConfigManager().get_database_config()
 
             # 基础数据库信息查询
             sql = """
@@ -408,7 +408,7 @@ class GetDatabaseTables(BaseHandler):
         """获取数据库所有表和表注释"""
         try:
             include_empty = arguments.get("include_empty_comments", True)
-            config = MySQLConfigManager().get_config()
+            config = AppConfigManager().get_database_config()
             execute_sql = ExecuteSQL()
 
             sql = """
@@ -465,7 +465,7 @@ class AnalyzeTableStats(BaseHandler):
             table_name = arguments["table_name"]
             include_columns = arguments.get("include_column_stats", True)
 
-            config = MySQLConfigManager().get_config()
+            config = AppConfigManager().get_database_config()
 
             # 表统计信息查询
             stats_sql = """
@@ -558,7 +558,7 @@ class CheckTableConstraints(BaseHandler):
             include_fk = arguments.get("include_foreign_keys", True)
             include_checks = arguments.get("include_check_constraints", True)
 
-            config = MySQLConfigManager().get_config()
+            config = AppConfigManager().get_database_config()
 
             results = []
 

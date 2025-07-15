@@ -3,7 +3,7 @@ import logging
 from typing import Set, List, Tuple, Dict, Any
 from server.config import AppConfigManager, DatabaseAccessLevel
 
-logger = logging.getLogger("mysql_server")
+logger = logging.getLogger(__name__)
 
 
 class DatabaseScopeViolation(Exception):
@@ -16,7 +16,7 @@ class DatabaseScopeViolation(Exception):
 
 
 class DatabaseScopeChecker:
-    """增强的数据库范围检查器，支持多级访问控制和智能模式匹配"""
+    """数据库范围检查器，支持多级访问控制和智能模式匹配"""
 
     # 系统数据库列表
     SYSTEM_DATABASES = {

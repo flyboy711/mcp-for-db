@@ -16,7 +16,7 @@ from starlette.applications import Starlette
 from starlette.routing import Route, Mount
 from starlette.types import Scope, Receive, Send
 
-from server.config.database import mysql_pool_manager
+from server.config.database import database_manager
 from server.oauth import OAuthMiddleware, login, login_page
 from server.tools.mysql.base import ToolRegistry
 from server.prompts.BasePrompt import PromptRegistry
@@ -30,7 +30,7 @@ from starlette.middleware import Middleware
 resources_initialized = False
 
 # 初始化服务器
-app = Server("mcp_server_mysql")
+app = Server("mcp_for_db")
 logger = get_logger(__name__)
 
 
@@ -46,7 +46,7 @@ async def initialize_global_resources():
     try:
         # 初始化数据库连接池
         logger.info("初始化数据库连接池")
-        await mysql_pool_manager.initialize_pool()
+        await database_manager.initialize_pool()
 
         logger.info("所有资源初始化完成")
         resources_initialized = True
@@ -68,7 +68,7 @@ async def close_global_resources():
     try:
         # 关闭数据库连接池
         logger.info("关闭数据库连接池")
-        await mysql_pool_manager.close_pool()
+        await database_manager.close_pool()
 
         logger.info("所有资源已关闭")
     except Exception as e:

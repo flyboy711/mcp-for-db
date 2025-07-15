@@ -1,25 +1,24 @@
 import logging
-from typing import Dict, Any, Sequence, List, Set, Optional, Tuple
+from typing import Dict, Any, Sequence, List, Optional, Tuple, Union, AsyncGenerator
 from dataclasses import dataclass
 from enum import Enum
 import re
 import csv
 from io import StringIO
+
 from server.utils.logger import get_logger, configure_logger
-from server.config.dbconfig import MySQLConfigManager
-from server.config.database import mysql_pool_manager
+from server.config import AppConfigManager
+from server.config.database import DatabaseManager
+from server.security.sql_interceptor import SQLInterceptor, SecurityException
+from server.security.sql_parser import SQLParser
+from server.security.sql_analyzer import SQLRiskAnalyzer
+from server.security.db_scope_check import DatabaseScopeChecker, DatabaseScopeViolation
 from mcp import Tool
 from mcp.types import TextContent
 from server.tools.mysql.base import BaseHandler
-from server.tools.mysql.exceptions import SQLPermissionError, SQLExecutionError
-import aiomysql
 
 logger = get_logger(__name__)
 configure_logger(log_level=logging.INFO, log_filename="execute_sql.log")
-
-# 预编译常用正则表达式
-COMMENT_PATTERN = re.compile(r'--.*$|/\*.*?\*/', re.MULTILINE | re.DOTALL)
-HOSTNAME_PATTERN = re.compile(r'(?:https?:\/\/)?([a-zA-Z0-9\-\.]+)(?::\d+)?')
 
 
 class SQLOperation(str, Enum):
@@ -53,42 +52,29 @@ class SQLResult:
     columns: Optional[List[str]] = None
     rows: Optional[List[Tuple]] = None
     affected_rows: int = 0
+    row_count: int = 0
+    execution_time: float = 0.0
 
 
 class ExecuteSQL(BaseHandler):
-    """安全可靠的 MySQL SQL 执行工具"""
+    """安全可靠的 MySQL SQL 执行工具，集成全面的安全检查"""
 
     name = "sql_executor"
     description = "Execute SQL queries on MySQL database with enhanced security and performance"
 
-    # SQL 操作检测模式（支持多行）
-    OPERATION_PATTERNS = {
-        SQLOperation.SELECT: re.compile(r'^\s*SELECT\b', re.IGNORECASE | re.MULTILINE),
-        SQLOperation.INSERT: re.compile(r'^\s*INSERT\s+INTO\b', re.IGNORECASE | re.MULTILINE),
-        SQLOperation.UPDATE: re.compile(r'^\s*UPDATE\b', re.IGNORECASE | re.MULTILINE),
-        SQLOperation.DELETE: re.compile(r'^\s*DELETE\s+FROM\b', re.IGNORECASE | re.MULTILINE),
-        SQLOperation.CREATE: re.compile(r'^\s*CREATE\s+(TABLE|VIEW|INDEX|DATABASE|PROCEDURE)\b',
-                                        re.IGNORECASE | re.MULTILINE),
-        SQLOperation.ALTER: re.compile(r'^\s*ALTER\s+(TABLE|DATABASE|PROCEDURE)\b',
-                                       re.IGNORECASE | re.MULTILINE),
-        SQLOperation.DROP: re.compile(r'^\s*DROP\s+(TABLE|VIEW|INDEX|DATABASE|PROCEDURE)\b',
-                                      re.IGNORECASE | re.MULTILINE),
-        SQLOperation.TRUNCATE: re.compile(r'^\s*TRUNCATE\s+TABLE\b', re.IGNORECASE | re.MULTILINE),
-        SQLOperation.SHOW: re.compile(r'^\s*SHOW\b', re.IGNORECASE | re.MULTILINE),
-        SQLOperation.DESCRIBE: re.compile(r'^\s*(DESCRIBE|DESC)\b', re.IGNORECASE | re.MULTILINE),
-        SQLOperation.EXPLAIN: re.compile(r'^\s*EXPLAIN\b', re.IGNORECASE | re.MULTILINE),
-        SQLOperation.EXECUTE: re.compile(r'^\s*(CALL|EXECUTE)\b', re.IGNORECASE | re.MULTILINE),
-    }
-
-    # 白名单安全字符
-    SAFE_CHAR_PATTERN = re.compile(r'[^a-zA-Z0-9_\-\. ]')
-    MAX_QUERY_LENGTH = 5000  # 限制最大查询长度
-    MAX_RESULT_ROWS = 100  # 限制最大返回行数
-
     def __init__(self):
-        self._config_manager = MySQLConfigManager()
-        self._allowed_ops_cache = None  # 缓存权限检查结果
-        self._last_permission_check = None
+        self.config_manager = AppConfigManager()
+        self.database_manager = DatabaseManager(self.config_manager)
+        self.sql_interceptor = SQLInterceptor(self.config_manager)
+        self.sql_parser = SQLParser(self.config_manager)
+        self.risk_analyzer = SQLRiskAnalyzer(self.config_manager)
+
+        # 初始化数据库范围检查器
+        self.database_checker = None
+        if self.config_manager.ENABLE_DATABASE_ISOLATION:
+            self.database_checker = DatabaseScopeChecker(self.config_manager)
+
+        logger.info("SQL执行工具初始化完成")
 
     def get_tool_description(self) -> Tool:
         """获取工具描述（添加安全警告）"""
@@ -101,237 +87,162 @@ class ExecuteSQL(BaseHandler):
                     "query": {
                         "type": "string",
                         "description": "SQL statement to execute. Use ? for parameter placeholders."
+                    },
+                    "parameters": {
+                        "type": "array",
+                        "description": "List of parameters for parameterized queries",
+                        "items": {"type": "string"}
+                    },
+                    "stream_results": {
+                        "type": "boolean",
+                        "description": "Whether to stream results for large queries",
+                        "default": False
+                    },
+                    "batch_size": {
+                        "type": "integer",
+                        "description": "Batch size for streaming results",
+                        "default": 1000
                     }
                 },
                 "required": ["query"]
             }
         )
 
-    def _get_allowed_operations(self) -> Set[SQLOperation]:
-        """获取当前角色允许的操作（带缓存机制）"""
-        # 如果配置未变化则使用缓存
-        config = self._config_manager.get_config()
-        current_role = config.get("role", "readonly")
+    async def execute_query(self, query: str, params: Optional[Dict[str, Any]] = None,
+                            stream_results: bool = False, batch_size: int = 1000) -> Union[
+        List[Dict[str, Any]], AsyncGenerator[List[Dict[str, Any]], None]]:
+        """
+        执行SQL查询，包含全面的安全检查和范围控制
 
-        if (self._allowed_ops_cache and
-                self._last_permission_check == current_role):
-            return self._allowed_ops_cache
+        Args:
+            query: SQL查询语句
+            params: 查询参数 (可选)
+            stream_results: 是否使用流式处理获取大型结果集
+            batch_size: 流式处理的批次大小
 
-        # 获取权限并缓存
-        permissions = self._config_manager.get_role_permissions(current_role)
-        allowed_ops = {SQLOperation.from_str(op) for op in permissions}
+        Returns:
+            查询结果列表或结果生成器
 
-        self._allowed_ops_cache = allowed_ops
-        self._last_permission_check = current_role
+        Raises:
+            SecurityException: 当操作被安全机制拒绝时
+            DatabaseScopeViolation: 当违反数据库范围限制时
+            DatabasePermissionError: 当用户没有执行操作的权限时
+        """
+        try:
+            # 安全检查
+            await self.sql_interceptor.check_operation(query)
 
-        logger.debug(f"Allowed operations for role '{current_role}': {allowed_ops}")
-        return allowed_ops
+            # 数据库范围检查
+            if self.database_checker:
+                self.database_checker.enforce_query(query)
 
-    def check_permissions(self, operations: Set[SQLOperation]) -> bool:
-        """检查操作权限（带详细错误信息）"""
-        allowed = self._get_allowed_operations()
-        unauthorized = operations - allowed
-
-        if unauthorized:
-            # 构建详细的权限错误信息
-            op_names = ', '.join(op.value for op in unauthorized)
-            allowed_names = ', '.join(op.value for op in allowed)
-            role = self._config_manager.get_config().get("role", "readonly")
-
-            raise SQLPermissionError(
-                f"Permission denied for operations: {op_names}. "
-                f"Your role '{role}' only allows: {allowed_names or 'none'}"
+            # 执行查询
+            return await self.database_manager.execute_query(
+                query,
+                params=params,
+                stream_results=stream_results,
+                batch_size=batch_size
             )
-        return True
+        except SecurityException as se:
+            logger.error(f"安全拦截: {se.message}")
+            raise
+        except DatabaseScopeViolation as dve:
+            logger.error(f"数据库范围违规: {dve.message}")
+            for violation in dve.violations:
+                logger.error(f" - {violation}")
+            raise
+        except Exception as e:
+            logger.exception(f"查询执行失败: {str(e)}")
+            raise
 
-    @staticmethod
-    def clean_sql(sql: str) -> str:
-        """清理 SQL 语句（更高效的方法）"""
-        # 移除注释
-        sql = COMMENT_PATTERN.sub('', sql)
-        # 压缩连续空格
-        return ' '.join(sql.split())
-
-    def sanitize_identifier(self, identifier: str) -> str:
-        """安全处理表名/列名标识符"""
-        # 替换潜在危险字符
-        sanitized = self.SAFE_CHAR_PATTERN.sub('', identifier)
-        # 限制长度
-        return sanitized[:64]
-
-    def extract_operations(self, sql: str) -> Set[SQLOperation]:
-        """提取 SQL 语句中的操作类型（支持多语句）"""
-        # 先清理 SQL
-        clean_sql = self.clean_sql(sql)
-
-        # 检查 SQL 长度限制
-        if len(clean_sql) > self.MAX_QUERY_LENGTH:
-            raise SQLExecutionError(f"Query exceeds maximum length of {self.MAX_QUERY_LENGTH} characters")
-
-        operations = set()
-
-        # 检测所有操作类型
-        for op, pattern in self.OPERATION_PATTERNS.items():
-            if pattern.search(clean_sql):
-                operations.add(op)
-
-        # 如果未检测到操作，则默认为 SELECT
-        if not operations:
-            operations.add(SQLOperation.SELECT)
-
-        return operations
-
-    def validate_sql_parameters(self, sql: str, params: list) -> None:
-        """验证参数数量与占位符匹配"""
-        # 计算占位符数量
-        placeholder_count = sql.count('?')
-
-        # 验证参数数量
-        if len(params) != placeholder_count:
-            raise SQLExecutionError(
-                f"Parameter count mismatch. Expected {placeholder_count} placeholders, "
-                f"got {len(params)} parameters"
-            )
-
-    def format_result(self, result: SQLResult) -> str:
+    def format_result(self, result: Union[List[Dict[str, Any]], Dict[str, Any]]) -> str:
         """使用 CSV 模块安全格式化结果"""
-        if not result.success:
-            return result.message
+        if isinstance(result, dict):
+            # 处理单个结果（如DML操作）
+            return f"操作: {result.get('operation', 'UNKNOWN')}, 影响行数: {result.get('affected_rows', 0)}"
+
+        if not result:
+            return "无结果"
+
+        # 尝试提取列名
+        columns = []
+        if result and isinstance(result[0], dict):
+            columns = list(result[0].keys())
 
         output = StringIO()
         writer = csv.writer(output)
 
         # 添加标题行
-        if result.columns:
-            writer.writerow(result.columns)
+        if columns:
+            writer.writerow(columns)
 
         # 添加数据行
-        if result.rows:
-            for row in result.rows:
-                # 将 None 转换为空字符串
-                safe_row = ['' if v is None else str(v) for v in row]
-                writer.writerow(safe_row)
+        for row in result:
+            if isinstance(row, dict):
+                # 将字典转换为元组，按列顺序
+                row_values = [row.get(col, '') for col in columns]
+                writer.writerow(row_values)
+            elif isinstance(row, (list, tuple)):
+                writer.writerow(row)
+            else:
+                writer.writerow([str(row)])
 
         content = output.getvalue()
         output.close()
 
         return content
 
-    async def execute_single_statement(
-            self,
-            conn: aiomysql.Connection,
-            statement: str,
-            params: Optional[tuple] = None
-    ) -> SQLResult:
-        """安全执行单条 SQL 语句"""
-        try:
-            # 验证 SQL 参数
-            param_list = params or ()
-            self.validate_sql_parameters(statement, list(param_list))
-
-            # 检查操作权限
-            operations = self.extract_operations(statement)
-            self.check_permissions(operations)
-
-            # 记录安全查询日志（避免记录敏感数据）
-            log_data = {
-                "operation": list(operations),
-                "query_length": len(statement),
-                "param_count": len(param_list),
-                "param_types": [type(p).__name__ for p in param_list]
-            }
-            logger.info(f"Executing SQL: {log_data}")
-
-            async with conn.cursor(aiomysql.DictCursor) as cursor:
-                # 执行参数化查询
-                await cursor.execute(statement, param_list)
-
-                if cursor.description:
-                    # 获取有限结果集
-                    rows = await cursor.fetchmany(self.MAX_RESULT_ROWS)
-                    columns = [col[0] for col in cursor.description]
-
-                    # 如果结果集超过限制，添加警告
-                    warning = ""
-                    if await cursor.fetchone():
-                        warning = f" (Truncated to {self.MAX_RESULT_ROWS} rows)"
-
-                    return SQLResult(
-                        success=True,
-                        message=f"Query executed successfully{warning}",
-                        columns=columns,
-                        rows=[tuple(row.values()) for row in rows]
-                    )
-                else:
-                    # 获取更新行数
-                    return SQLResult(
-                        success=True,
-                        message="Execution successful",
-                        affected_rows=cursor.rowcount
-                    )
-
-        except aiomysql.Error as e:
-            logger.error(f"SQL execution error: {e.args[0] if e.args else str(e)}")
-            raise SQLExecutionError(f"Execution failed: {e.args[0] if e.args else str(e)}")
-
     async def run_tool(self, arguments: Dict[str, Any]) -> Sequence[TextContent]:
         """执行 SQL 工具主入口（增强安全性和错误处理）"""
         # 验证输入参数
         if "query" not in arguments:
-            return [TextContent(type="text", text="Error: Missing query parameter")]
+            return [TextContent(type="text", text="错误: 缺少查询参数")]
 
         query = arguments["query"].strip()
         parameters = arguments.get("parameters", [])
-        results = []
-        has_errors = False
+        stream_results = arguments.get("stream_results", False)
+        batch_size = arguments.get("batch_size", 1000)
 
-        # 验证基本 SQL 安全
-        if not self.is_sql_safe(query):
-            return [TextContent(type="text", text="Error: Query contains potentially unsafe elements")]
-
-        # 拆分多条 SQL 语句
-        statements = [stmt.strip() for stmt in query.split(';') if stmt.strip()]
-
-        # 验证多语句权限
-        if len(statements) > 1:
-            if SQLOperation.EXECUTE not in self._get_allowed_operations():
-                return [TextContent(type="text",
-                                    text="Error: Multi-statement execution requires EXECUTE permission")]
+        # 参数处理
+        params_dict = None
+        if parameters:
+            # 将参数列表转换为字典（假设参数按顺序提供）
+            try:
+                params_dict = {f"param_{i}": value for i, value in enumerate(parameters)}
+            except Exception:
+                logger.warning("参数格式无效，将忽略参数")
 
         try:
-            # 获取数据库连接
-            async for conn in mysql_pool_manager.get_connection():
-                # 为每条语句分配参数
-                for i, statement in enumerate(statements):
-                    # 第一条语句使用所有参数（简化模型）
-                    stmt_params = tuple(parameters) if i == 0 else ()
+            # 执行查询
+            if stream_results:
+                # 流式处理结果
+                results = []
+                async for batch in self.execute_query(
+                        query,
+                        params=params_dict,
+                        stream_results=True,
+                        batch_size=batch_size
+                ):
+                    formatted_batch = self.format_result(batch)
+                    results.append(TextContent(type="text", text=formatted_batch))
 
-                    try:
-                        result = await self.execute_single_statement(conn, statement, stmt_params)
-                        results.append(self.format_result(result))
-                    except (SQLPermissionError, SQLExecutionError) as e:
-                        results.append(f"ERROR in statement {i + 1}: {str(e)}")
-                        has_errors = True
-                        logger.warning(f"SQL statement {i + 1} failed: {e}")
-                    except Exception as e:
-                        results.append(f"CRITICAL ERROR in statement {i + 1}: {str(e)}")
-                        has_errors = True
-                        logger.exception(f"Unexpected error in SQL statement {i + 1}")
+                # 添加摘要
+                results.append(TextContent(type="text", text="\n---\n流式查询完成"))
+                return results
+            else:
+                # 普通查询
+                result = await self.execute_query(query, params=params_dict)
+                formatted_result = self.format_result(result)
+                return [TextContent(type="text", text=formatted_result)]
 
-                # 添加执行摘要
-                summary = f"Executed {len(statements)} statements with {len(has_errors and 'errors' or 'success')}"
-                results.append(summary)
-
-                return [TextContent(type="text", text="\n---\n".join(results))]
-
-        except aiomysql.Error as e:
-            error_msg = f"Database connection error: {str(e)}"
-            logger.error(error_msg)
-            return [TextContent(type="text", text=error_msg)]
+        except SecurityException as se:
+            return [TextContent(type="text", text=f"安全拦截: {se.message}")]
+        except DatabaseScopeViolation as dve:
+            violations = "\n".join(dve.violations)
+            return [TextContent(type="text", text=f"数据库范围违规: {dve.message}\n{violations}")]
         except Exception as e:
-            error_msg = f"System error: {str(e)}"
-            logger.exception(error_msg)
-            return [TextContent(type="text", text=error_msg)]
+            logger.exception(f"SQL执行失败: {str(e)}")
+            return [TextContent(type="text", text=f"执行失败: {str(e)}")]
 
     def is_sql_safe(self, sql: str) -> bool:
         """基础 SQL 安全检查（非完全防护，需配合参数化使用）"""
@@ -347,14 +258,110 @@ class ExecuteSQL(BaseHandler):
 
         for pattern in dangerous_patterns:
             if re.search(pattern, sql, re.IGNORECASE):
-                logger.warning(f"Potential dangerous pattern detected: {pattern}")
+                logger.warning(f"检测到潜在危险模式: {pattern}")
                 return False
 
         # 2. 检查非参数化数据值
         if "'" in sql or '"' in sql or "--" in sql:
             # 允许在参数化查询中使用占位符
             if '?' not in sql:
-                logger.warning("Potential unsafe literals without placeholders")
+                logger.warning("检测到未使用参数化查询的字符串字面量")
                 return False
 
         return True
+
+    async def execute_transaction(self, queries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        在事务中执行多个查询
+
+        Args:
+            queries: 查询列表，每个元素是包含 'query' 和可选 'params' 的字典
+
+        Returns:
+            每个查询的结果列表
+        """
+        try:
+            # 安全检查每个查询
+            for query_item in queries:
+                sql = query_item['query']
+                await self.sql_interceptor.check_operation(sql)
+                if self.database_checker:
+                    self.database_checker.enforce_query(sql)
+
+            # 执行事务
+            return await self.database_manager.execute_transaction(queries)
+        except SecurityException as se:
+            logger.error(f"事务安全拦截: {se.message}")
+            raise
+        except DatabaseScopeViolation as dve:
+            logger.error(f"事务数据库范围违规: {dve.message}")
+            for violation in dve.violations:
+                logger.error(f" - {violation}")
+            raise
+        except Exception as e:
+            logger.exception(f"事务执行失败: {str(e)}")
+            raise
+
+    async def get_current_database(self) -> str:
+        """获取当前连接的数据库名称"""
+        return await self.database_manager.get_current_database()
+
+    async def get_database_info(self) -> Dict[str, Any]:
+        """获取数据库信息"""
+        return await self.database_manager.get_database_info()
+
+
+# 测试函数
+async def test_sql_executor():
+    """测试SQL执行工具"""
+    executor = ExecuteSQL()
+
+    # 测试简单查询
+    print("测试简单查询:")
+    result = await executor.execute_query("SELECT VERSION() AS version")
+    print(f"数据库版本: {result[0]['version']}")
+
+    # 测试安全拦截
+    print("\n测试安全拦截:")
+    try:
+        await executor.execute_query("DROP TABLE important_table")
+    except SecurityException as se:
+        print(f"✅ 安全拦截成功: {se.message}")
+
+    # 测试数据库范围检查
+    print("\n测试数据库范围检查:")
+    if executor.config_manager.ENABLE_DATABASE_ISOLATION:
+        try:
+            await executor.execute_query("SELECT * FROM other_db.users")
+        except DatabaseScopeViolation as dve:
+            print(f"✅ 数据库范围检查成功: {dve.message}")
+
+    # 测试流式查询
+    print("\n测试流式查询:")
+    try:
+        async for batch in executor.execute_query(
+                "SELECT * FROM large_table",
+                stream_results=True,
+                batch_size=100
+        ):
+            print(f"获取到 {len(batch)} 条记录")
+    except Exception as e:
+        print(f"流式查询失败: {str(e)}")
+
+    # 测试事务
+    print("\n测试事务:")
+    try:
+        queries = [
+            {"query": "INSERT INTO test (name) VALUES ('test1')"},
+            {"query": "UPDATE test SET name = 'updated' WHERE name = 'test1'"}
+        ]
+        results = await executor.execute_transaction(queries)
+        print(f"事务执行结果: {results}")
+    except Exception as e:
+        print(f"事务执行失败: {str(e)}")
+
+
+if __name__ == "__main__":
+    import asyncio
+
+    asyncio.run(test_sql_executor())

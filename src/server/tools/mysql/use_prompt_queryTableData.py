@@ -2,7 +2,7 @@ from typing import Dict, Sequence, Any
 from mcp import Tool
 from mcp.types import TextContent
 
-from .base import BaseHandler
+from server.tools.mysql.base import BaseHandler
 
 """
 

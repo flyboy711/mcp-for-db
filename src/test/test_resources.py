@@ -32,13 +32,6 @@ async def test_resources():
 
 
 if __name__ == "__main__":
-    import os
-
-    os.environ["MYSQL_HOST"] = "localhost"
-    os.environ["MYSQL_USER"] = "root"
-    os.environ["MYSQL_PASSWORD"] = "password"
-    os.environ["MYSQL_DATABASE"] = "mcp_db"
-
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:

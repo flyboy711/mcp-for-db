@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 class SQLParser:
     """
-    高级 SQL 解析器，提供精确的 SQL 解析和安全分析功能
+    SQL 解析器，提供精确的 SQL 解析和安全分析功能
     """
 
     def __init__(self, config_manager: AppConfigManager):

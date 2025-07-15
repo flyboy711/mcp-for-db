@@ -3,6 +3,8 @@ from typing import List, Set, Any
 from enum import IntEnum, Enum
 from dotenv import load_dotenv
 
+load_dotenv()
+
 
 def strtobool(value: Any) -> bool:
     """将字符串转换为布尔值"""
@@ -311,7 +313,6 @@ class EnvFileManager:
             f.writelines(new_lines)
 
 
-# 使用示例
 if __name__ == "__main__":
     config = AppConfigManager()
 

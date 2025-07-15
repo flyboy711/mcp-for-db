@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from typing import AsyncGenerator, Optional, Dict, Any, List, Union
 from enum import Enum
 
-from server.config import AppConfigManager
+from server.config import AppConfigManager, EnvFileManager
 from server.security.sql_interceptor import SQLInterceptor, SecurityException
 from server.security.sql_parser import SQLParser
 from server.security.sql_analyzer import SQLRiskAnalyzer
@@ -190,7 +190,7 @@ class DatabaseManager:
                 # 如果成功使用特定插件，更新配置
                 if plugin:
                     # 使用配置管理类更新环境变量
-                    self.config.update_env({"DB_AUTH_PLUGIN": plugin})
+                    EnvFileManager().update({"DB_AUTH_PLUGIN": plugin})
                 return
             except Exception as e:
                 logger.warning(f"插件 {plugin} 失败: {str(e)}")
@@ -280,6 +280,30 @@ class DatabaseManager:
         try:
             # 获取连接
             async with self._pool.acquire() as conn:
+                # === 实际执行操作前的最后一道防线 ===
+                async def safe_cursor():
+                    async with conn.cursor(aiomysql.DictCursor) as cursor:
+                        # 安全层: 阻止高危操作执行
+                        def execute_wrapper(query, params=None):
+                            # 解析SQL以获取操作类型和表名
+                            parsed_sql = self.sql_parser.parse_query(query)
+                            operation = parsed_sql['operation_type'].upper()
+
+                            # 硬阻止高危操作
+                            if operation in {'DROP', 'TRUNCATE', 'ALTER', 'RENAME', 'LOCK'}:
+                                raise SecurityException(f"高危操作 {operation} 被强制阻止")
+
+                            # 执行原始操作
+                            if params:
+                                return cursor.execute(query, params)
+                            return cursor.execute(query)
+
+                        # 替换原执行方法
+                        cursor.execute = execute_wrapper
+                        yield cursor
+
+                # 返回安全包装后的连接
+                conn.safe_cursor = safe_cursor
                 yield conn
         except aiomysql.Error as e:
             logger.error(f"获取数据库连接失败: {str(e)}")
@@ -289,7 +313,7 @@ class DatabaseManager:
             logger.exception(f"获取数据库连接时发生未预期错误: {str(e)}")
             raise
 
-    ########################################################################################################################
+    #############################################################################################
     async def execute_query(self, sql_query: str, params: Optional[Dict[str, Any]] = None,
                             require_database: bool = True, stream_results: bool = False,
                             batch_size: int = 1000) -> Union[
@@ -315,6 +339,16 @@ class DatabaseManager:
         start_time = time.time()
 
         try:
+            # === 提前拦截高危操作 ===
+            # 解析SQL以获取操作类型
+            parsed_sql = self.sql_parser.parse_query(sql_query)
+            operation = parsed_sql['operation_type']
+
+            # 硬阻止高危操作
+            HARD_BLOCK_OPS = {'DROP', 'TRUNCATE', 'ALTER', 'RENAME', 'LOCK', 'DELETE', 'UPDATE'}
+            if operation in HARD_BLOCK_OPS:
+                raise SecurityException(f"高危操作 {operation} 被强制阻止 - 此操作不可执行")
+
             # 安全检查
             await self.sql_interceptor.check_operation(sql_query)
 
@@ -323,15 +357,8 @@ class DatabaseManager:
                 self.database_checker.enforce_query(sql_query)
 
             # 解析SQL以获取操作类型和表名
-            parsed_sql = self.sql_parser.parse_query(sql_query)
-            operation = parsed_sql['operation_type']
             category = parsed_sql['category']
             tables = parsed_sql['tables']
-
-            # 权限模拟检查（在实际执行前）
-            if operation in {'INSERT', 'UPDATE', 'DELETE', 'DROP', 'TRUNCATE', 'ALTER'}:
-                # 记录权限警告（实际权限检查在数据库执行）
-                logger.warning(f"执行 {operation} 操作在表 {', '.join(tables)} 上，请确保用户有足够权限")
 
             async with self.get_connection() as conn:
                 # 创建游标
@@ -636,70 +663,85 @@ async def test_database_operations():
     logger.info("\n=== 启动数据库操作测试 ===")
 
     try:
-        # 场景1: 获取数据库信息
-        logger.info("测试场景1: 获取数据库信息")
-        db_info = await database_manager.get_database_info()
-        logger.info(f"数据库信息: {db_info}")
-
-        # 场景2: 获取当前数据库名称
-        logger.info("\n测试场景2: 获取当前数据库名称")
-        current_db = await database_manager.get_current_database()
-        logger.info(f"当前数据库: {current_db}")
-
-        # 场景3: 执行简单查询
-        logger.info("\n测试场景3: 执行简单查询")
-        result = await database_manager.execute_query("SELECT VERSION() AS version")
-        logger.info(f"数据库版本: {result[0]['version']}")
-
-        # 场景4: 测试流式查询
-        logger.info("\n测试场景4: 测试流式查询")
-        async for batch in database_manager.execute_query(
-                "SELECT * FROM large_table",
-                stream_results=True,
-                batch_size=100
-        ):
-            logger.info(f"获取到 {len(batch)} 条记录")
-
-        # 场景5: 测试元数据查询增强
-        logger.info("\n测试场景5: 测试元数据查询增强")
-        result = await database_manager.execute_query("SHOW TABLES")
-        for row in result:
-            logger.info(f"表名: {row.get('table_name', row.get('Tables_in_test', '未知'))}")
-
-        # 场景6: 测试DML操作
-        logger.info("\n测试场景6: 测试DML操作")
-        try:
-            result = await database_manager.execute_query("INSERT INTO test (name) VALUES ('test1')")
-            logger.info(f"插入操作结果: {result}")
-        except DatabasePermissionError as dpe:
-            logger.info(f"✅ 权限错误处理成功: {dpe.message}")
-            logger.info(f"操作: {dpe.operation}, 表: {dpe.table}")
+        # # 场景1: 获取数据库信息
+        # logger.info("测试场景1: 获取数据库信息")
+        # db_info = await database_manager.get_database_info()
+        # logger.info(f"数据库信息: {db_info}")
+        #
+        # # 场景2: 获取当前数据库名称
+        # logger.info("\n测试场景2: 获取当前数据库名称")
+        # current_db = await database_manager.get_current_database()
+        # logger.info(f"当前数据库: {current_db}")
+        #
+        # # 场景3: 执行简单查询
+        # logger.info("\n测试场景3: 执行简单查询")
+        # result = await database_manager.execute_query("SELECT VERSION() AS version")
+        # logger.info(f"数据库版本: {result[0]['version']}")
+        #
+        # # 场景4: 测试元数据查询增强
+        # logger.info("\n测试场景4: 测试元数据查询增强")
+        # result = await database_manager.execute_query("SHOW TABLES")
+        # logger.info(f"当前数据库中所有的表：{result}")
+        # for row in result:
+        #     logger.info(f"表名: {row.get('table_name', row.get('Tables_in_test', '未知'))}")
+        #
+        # # 场景5: 测试流式查询
+        # logger.info("\n测试场景5: 测试流式查询")
+        # # 首先获取当前数据库中的所有表
+        # tables = await database_manager.execute_query("SHOW TABLES")
+        # if tables:
+        #     # 使用找到的第一个表进行测试
+        #     table_name = list(tables[0].values())[0]
+        #     logger.info(f"使用表: {table_name} 进行流式查询测试")
+        #
+        #     # 获取异步生成器
+        #     result_generator = await database_manager.execute_query(
+        #         f"SELECT * FROM {table_name}",
+        #         stream_results=True,
+        #         batch_size=100
+        #     )
+        #
+        #     # 使用 async for 迭代结果
+        #     async for batch in result_generator:
+        #         logger.info(f"获取到 {len(batch)} 条记录")
+        # else:
+        #     logger.warning("没有找到任何表进行测试")
+        #
+        #
+        # # 场景6: 测试DML操作
+        # logger.info("\n测试场景6: 测试DML操作")
+        # try:
+        #     result = await database_manager.execute_query("INSERT INTO orders (O_ORDERSTATUS) VALUES ('test1')")
+        #     logger.info(f"插入操作结果: {result}")
+        # except DatabasePermissionError as dpe:
+        #     logger.info(f"权限错误处理成功: {dpe.message}")
+        #     logger.info(f"操作: {dpe.operation}, 表: {dpe.table}")
 
         # 场景7: 测试安全拦截
         logger.info("\n测试场景7: 测试安全拦截")
         try:
-            await database_manager.execute_query("DROP TABLE important_table")
+            await database_manager.execute_query("DROP TABLE t_users")
         except SecurityException as se:
-            logger.info(f"✅ 安全拦截成功: {se.message}")
+            logger.info(f"安全拦截成功: {se.message}")
 
-        # 场景8: 测试数据库范围检查
-        logger.info("\n测试场景8: 测试数据库范围检查")
-        if config_manager.ENABLE_DATABASE_ISOLATION:
-            try:
-                await database_manager.execute_query("SELECT * FROM other_db.users")
-            except DatabaseScopeViolation as dve:
-                logger.info(f"✅ 数据库范围检查成功: {dve.message}")
-
-        # 场景9: 测试连接恢复
-        logger.info("\n测试场景9: 测试连接恢复")
-        # 模拟连接失败
-        database_manager._state = DatabaseConnectionState.ERROR
-        await database_manager.reconnect()
-        db_info = await database_manager.get_database_info()
-        logger.info(f"重新连接后数据库状态: {db_info['status']}")
+        # # 场景8: 测试数据库范围检查
+        # logger.info("\n测试场景8: 测试数据库范围检查")
+        # if config_manager.ENABLE_DATABASE_ISOLATION:
+        #     try:
+        #         await database_manager.execute_query("SELECT * FROM mcp_db.t_users")
+        #     except DatabaseScopeViolation as dve:
+        #         logger.info(f"数据库范围检查成功: {dve.message}")
+        #
+        # # 场景9: 测试连接恢复
+        # logger.info("\n测试场景9: 测试连接恢复")
+        # # 模拟连接失败
+        # database_manager._state = DatabaseConnectionState.ERROR
+        # await database_manager.reconnect()
+        # db_info = await database_manager.get_database_info()
+        # logger.info(f"重新连接后数据库状态: {db_info['status']}")
 
     except Exception as e:
-        logger.exception(f"❌ 测试失败: {str(e)}")
+        logger.exception(f"测试失败: {str(e)}")
     finally:
         # 清理
         await database_manager.close_pool()
@@ -724,5 +766,5 @@ async def main():
 
 
 if __name__ == "__main__":
-    # asyncio.run(test_database_operations())
-    asyncio.run(main())
+    asyncio.run(test_database_operations())
+    # asyncio.run(main())

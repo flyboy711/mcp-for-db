@@ -7,21 +7,21 @@ from typing import List
 from pydantic.networks import AnyUrl
 from mcp.types import Resource
 from server.resources.BaseResource import BaseResource
-from server.config.database import mysql_pool_manager
+from server.config.database import database_manager
 from server.utils.logger import get_logger, configure_logger
-from server.config import MySQLConfigManager
+from server.config import AppConfigManager
 
 logger = get_logger(__name__)
 configure_logger(log_level=logging.INFO, log_filename="resources.log")
 
 # 获取配置一次而不是每次实例化都获取
-_db_config = MySQLConfigManager().get_config()
+_db_config = AppConfigManager().get_database_config()
 db_name = _db_config["database"]
 
 
 def _build_safe_query(table_name: str) -> str:
     """构建安全的SQL查询语句"""
-    # 对表名进行简单清理（实际环境中应使用更严格的白名单验证）
+    # 对表名进行简单清理
     clean_table_name = ''.join(
         c for c in table_name
         if c.isalnum() or c in ('_', '-', ' ', '.')
@@ -32,7 +32,7 @@ def _build_safe_query(table_name: str) -> str:
 
 
 def generate_csv(columns: list, rows: list, metadata: list) -> str:
-    """使用csv模块生成格式正确的CSV（更可靠）"""
+    """使用csv模块生成格式正确的CSV"""
     output = StringIO()
     writer = csv.writer(output)
 
@@ -102,7 +102,7 @@ class MySQLResource(BaseResource):
     def __init__(self):
         """初始化资源管理"""
         super().__init__()
-        self.cache = {}  # 简单的查询结果缓存
+        self.cache = {}  # 查询结果缓存
 
     async def get_resource_descriptions(self) -> List[Resource]:
         """获取数据库表资源描述（带缓存机制）"""
@@ -114,7 +114,7 @@ class MySQLResource(BaseResource):
             return self.cache['table_descriptions']
 
         try:
-            async for conn in mysql_pool_manager.get_connection():
+            async with database_manager.get_connection() as conn:
                 async with conn.cursor(aiomysql.DictCursor) as cursor:
                     await cursor.execute(self.TABLE_QUERY, (db_name,))
                     tables = await cursor.fetchall()
@@ -158,13 +158,13 @@ class MySQLResource(BaseResource):
             # 获取列元数据（用于优化CSV生成）
             column_metadata = await self.get_table_metadata(table_name)
 
-            async for conn in mysql_pool_manager.get_connection():
+            async with database_manager.get_connection() as conn:
                 async with conn.cursor(aiomysql.DictCursor) as cursor:
                     # 使用参数化查询避免SQL注入
                     safe_query = _build_safe_query(table_name)
                     await cursor.execute(safe_query)
 
-                    # 直接获取列名（更可靠）
+                    # 直接获取列名
                     columns = [col[0] for col in cursor.description]
                     rows = await cursor.fetchall()
 
@@ -183,7 +183,7 @@ class MySQLResource(BaseResource):
         if cache_key in self.cache:
             return self.cache[cache_key]
 
-        async for conn in mysql_pool_manager.get_connection():
+        async with database_manager.get_connection() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
                 # 首先验证表存在
                 await cursor.execute(self.TABLE_EXISTS_QUERY, (db_name, table_name))
