@@ -6,7 +6,7 @@ from .get_table_infos import DescribeTableTool, ShowColumnsTool
 from .get_mysql_health import GetDBHealthRunning, GetDBHealthIndexUsage, GetProcessList
 from .switch_database import SwitchDatabase
 from .use_prompt_queryTableData import UsePromptQueryTableData
-from .mysql_analyzer import SlowQueryAnalyzer, AnalyzeQueryPerformance, ExplainQuery
+from .mysql_analyzer import SlowQueryAnalyzer, AnalyzeQueryPerformance
 from .IndexAdvisor import IndexAdvisor
 from .alertprocessor import DDLAlertProcessor, AlertDiscoveryTool, AlertDataAnalyzer
 
@@ -28,7 +28,6 @@ __all__ = [
     "AnalyzeTableStats",
     "CheckTableConstraints",
     "AnalyzeQueryPerformance",
-    "ExplainQuery",
     "ShowCreateTableTool",
     "DescribeTableTool",
     "ShowColumnsTool",

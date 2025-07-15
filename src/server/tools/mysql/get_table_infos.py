@@ -1,18 +1,14 @@
 import logging
 from typing import Dict, Sequence, Any
 from server.utils.logger import configure_logger, get_logger
-
 from mcp import Tool
 from mcp.types import TextContent
-
 from server.tools.mysql.base import BaseHandler
 from server.config import AppConfigManager
 from server.tools.mysql import ExecuteSQL
 
 logger = get_logger(__name__)
 configure_logger(log_level=logging.INFO, log_filename="get_table_infos.log")
-
-execute_sql = ExecuteSQL()
 
 
 ########################################################################################################################
@@ -136,11 +132,10 @@ class GetTableIndex(BaseHandler):
 
 
 ########################################################################################################################
-
 class GetTableLock(BaseHandler):
     name = "get_table_lock"
     description = (
-        "获取当前mysql服务器行级锁、表级锁情况(Check if there are row-level locks or table-level locks in the current MySQL server  )"
+        "获取当前 MySQL 服务器行级锁、表级锁情况(Check if there are row-level locks or table-level locks in the current MySQL server  )"
     )
 
     def get_tool_description(self) -> Tool:
@@ -150,15 +145,19 @@ class GetTableLock(BaseHandler):
             inputSchema={
                 "type": "object",
                 "properties": {
-
+                    "table_name": {
+                        "type": "string",
+                        "description": "要分析的表名"
+                    }
                 }
             }
         )
 
     async def run_tool(self, arguments: Dict[str, Any]) -> Sequence[TextContent]:
-        use_result = await self.get_table_use(arguments)
-        lock_result_5 = await self.get_table_lock_for_mysql5(arguments)
-        lock_result_8 = await self.get_table_lock_for_mysql8(arguments)
+        table_name = arguments["table_name"]
+        use_result = await self.get_table_use(self)
+        lock_result_5 = await self.get_table_lock_for_mysql5(self)
+        lock_result_8 = await self.get_table_lock_for_mysql8(self)
 
         # 合并两个结果
         combined_result = []
@@ -173,7 +172,8 @@ class GetTableLock(BaseHandler):
     """
 
     @staticmethod
-    async def get_table_use(self, arguments: Dict[str, Any]) -> Sequence[TextContent]:
+    async def get_table_use(self) -> Sequence[TextContent]:
+        execute_sql = ExecuteSQL()
         try:
             sql = "SHOW OPEN TABLES WHERE In_use > 0;"
 
@@ -189,7 +189,9 @@ class GetTableLock(BaseHandler):
     """
 
     @staticmethod
-    async def get_table_lock_for_mysql5(self, arguments: Dict[str, Any]) -> Sequence[TextContent]:
+    async def get_table_lock_for_mysql5(self) -> Sequence[TextContent]:
+        execute_sql = ExecuteSQL()
+
         try:
             sql = "SELECT p2.`HOST` 被阻塞方host,  p2.`USER` 被阻塞方用户, r.trx_id 被阻塞方事务id, "
             sql += "r.trx_mysql_thread_id 被阻塞方线程号,TIMESTAMPDIFF(SECOND, r.trx_wait_started, CURRENT_TIMESTAMP) 等待时间, "
@@ -223,7 +225,9 @@ class GetTableLock(BaseHandler):
     """
 
     @staticmethod
-    async def get_table_lock_for_mysql8(self, arguments: Dict[str, Any]) -> Sequence[TextContent]:
+    async def get_table_lock_for_mysql8(self) -> Sequence[TextContent]:
+        execute_sql = ExecuteSQL()
+
         try:
             sql = "SELECT p2.HOST AS '被阻塞方host',p2.USER AS '被阻塞方用户',r.trx_id AS '被阻塞方事务id', "
             sql += "r.trx_mysql_thread_id AS '被阻塞方线程号',TIMESTAMPDIFF(SECOND, r.trx_wait_started, CURRENT_TIMESTAMP) AS '等待时间',"
@@ -251,7 +255,6 @@ class GetTableLock(BaseHandler):
 
 
 ########################################################################################################################
-
 class GetTableName(BaseHandler):
     name = "get_table_name"
     description = (
@@ -293,19 +296,13 @@ class GetTableName(BaseHandler):
             config = AppConfigManager().get_database_config()
             execute_sql = ExecuteSQL()
 
-            # 使用参数化查询防止SQL注入
-            sql = """
-                SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_COMMENT
-                FROM information_schema.TABLES
-                WHERE TABLE_SCHEMA = %s AND TABLE_COMMENT LIKE %s;
-            """
-            params = [config['database'], f"%{text}%"]
+            sql = "SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_COMMENT "
+            sql += f"FROM information_schema.TABLES WHERE TABLE_SCHEMA = '{config['database']}' AND TABLE_COMMENT LIKE '%{text}%';"
 
             # 安全记录日志（避免记录敏感数据）
             logger.info(f"搜索数据库: {config['database']}, 关键字: {text}")
-            logger.debug(f"SQL语句: {sql.strip()}, 参数: {params}")
             logger.info(f"执行的 SQL 语句：{sql}")
-            return await execute_sql.run_tool({"query": sql, "parameters": params})
+            return await execute_sql.run_tool({"query": sql})
 
         except Exception as e:
             logger.error(f"执行查询时出错: {str(e)}", exc_info=True)
@@ -339,6 +336,7 @@ class GetDatabaseInfo(BaseHandler):
         try:
             include_connection = arguments.get("include_connection_info", True)
             config = AppConfigManager().get_database_config()
+            execute_sql = ExecuteSQL()
 
             # 基础数据库信息查询
             sql = """
@@ -365,17 +363,17 @@ class GetDatabaseInfo(BaseHandler):
                 UNION ALL
                 SELECT 
                     'Host' as info_type, 
-                    %s as value
+                    ？ as value
                 UNION ALL
                 SELECT 
                     'Port' as info_type, 
-                    %s as value
+                    ？ as value
                 """
-                params = [config['host'], config['port']]
+                params = [str(config['host']), str(config['port'])]
             else:
                 params = []
 
-            return await ExecuteSQL().run_tool({"query": sql, "parameters": params})
+            return await execute_sql.run_tool({"query": sql, "parameters": params})
 
         except Exception as e:
             logger.error(f"获取数据库信息失败: {str(e)}", exc_info=True)
@@ -416,9 +414,9 @@ class GetDatabaseTables(BaseHandler):
                     TABLE_NAME, 
                     TABLE_COMMENT
                 FROM information_schema.TABLES
-                WHERE TABLE_SCHEMA = %s
+                WHERE TABLE_SCHEMA = ?
             """
-            params = [config['database']]
+            params = [str(config['database'])]
 
             if not include_empty:
                 sql += " AND TABLE_COMMENT != ''"
@@ -466,6 +464,7 @@ class AnalyzeTableStats(BaseHandler):
             include_columns = arguments.get("include_column_stats", True)
 
             config = AppConfigManager().get_database_config()
+            execute_sql = ExecuteSQL()
 
             # 表统计信息查询
             stats_sql = """
@@ -478,7 +477,7 @@ class AnalyzeTableStats(BaseHandler):
                     ENGINE as '存储引擎',
                     TABLE_COLLATION as '字符集'
                 FROM information_schema.tables 
-                WHERE table_schema = %s AND table_name = %s
+                WHERE table_schema = ? AND table_name = ?
             """
             stats_params = [config['database'], table_name]
 
@@ -494,19 +493,19 @@ class AnalyzeTableStats(BaseHandler):
                     COLUMN_DEFAULT AS '默认值',
                     COLUMN_KEY AS '键类型'
                 FROM information_schema.columns 
-                WHERE table_schema = %s AND table_name = %s
+                WHERE table_schema = ? AND table_name = ?
                 ORDER BY ORDINAL_POSITION
             """
             columns_params = [config['database'], table_name]
 
             # 执行查询
-            stats_result = await ExecuteSQL().run_tool({
+            stats_result = await execute_sql.run_tool({
                 "query": stats_sql,
                 "parameters": stats_params
             })
 
             if include_columns:
-                columns_result = await ExecuteSQL().run_tool({
+                columns_result = await execute_sql.run_tool({
                     "query": columns_sql,
                     "parameters": columns_params
                 })
@@ -559,50 +558,90 @@ class CheckTableConstraints(BaseHandler):
             include_checks = arguments.get("include_check_constraints", True)
 
             config = AppConfigManager().get_database_config()
+            execute_sql = ExecuteSQL()
 
             results = []
 
             # 外键约束查询
             if include_fk:
-                fk_sql = """
-                    SELECT 
-                        CONSTRAINT_NAME as '约束名',
-                        COLUMN_NAME as '列名',
-                        REFERENCED_TABLE_NAME as '引用表',
-                        REFERENCED_COLUMN_NAME as '引用列',
-                        UPDATE_RULE as '更新规则',
-                        DELETE_RULE as '删除规则'
-                    FROM information_schema.key_column_usage 
-                    WHERE table_schema = %s 
-                    AND table_name = %s 
-                    AND REFERENCED_TABLE_NAME IS NOT NULL
-                """
-                fk_params = [config['database'], table_name]
-                fk_result = await ExecuteSQL().run_tool({
-                    "query": fk_sql,
-                    "parameters": fk_params
-                })
+                # 根据MySQL版本选择不同查询
+                try:
+                    # 尝试MySQL 8.0+语法
+                    fk_sql = """
+                        SELECT 
+                            CONSTRAINT_NAME as '约束名',
+                            COLUMN_NAME as '列名',
+                            REFERENCED_TABLE_NAME as '引用表',
+                            REFERENCED_COLUMN_NAME as '引用列',
+                            UPDATE_RULE as '更新规则',
+                            DELETE_RULE as '删除规则'
+                        FROM information_schema.REFERENTIAL_CONSTRAINTS 
+                        WHERE CONSTRAINT_SCHEMA = ? 
+                        AND TABLE_NAME = ? 
+                    """
+                    fk_params = [config['database'], table_name]
+                    fk_result = await execute_sql.run_tool({
+                        "query": fk_sql,
+                        "parameters": fk_params
+                    })
+                except Exception:
+                    # 回退到兼容语法
+                    fk_sql = """
+                        SELECT 
+                            CONSTRAINT_NAME as '约束名',
+                            COLUMN_NAME as '列名',
+                            REFERENCED_TABLE_NAME as '引用表',
+                            REFERENCED_COLUMN_NAME as '引用列'
+                        FROM information_schema.key_column_usage 
+                        WHERE table_schema = ? 
+                        AND table_name = ? 
+                        AND REFERENCED_TABLE_NAME IS NOT NULL
+                    """
+                    fk_params = [config['database'], table_name]
+                    fk_result = await execute_sql.run_tool({
+                        "query": fk_sql,
+                        "parameters": fk_params
+                    })
                 results.extend(fk_result)
 
             # 检查约束查询
             if include_checks:
                 try:
-                    check_sql = """
-                        SELECT 
-                            CONSTRAINT_NAME as '约束名',
-                            CHECK_CLAUSE as '检查条件'
-                        FROM information_schema.check_constraints 
-                        WHERE constraint_schema = %s 
-                        AND table_name = %s
-                    """
-                    check_params = [config['database'], table_name]
-                    check_result = await ExecuteSQL().run_tool({
-                        "query": check_sql,
-                        "parameters": check_params
-                    })
+                    # 根据MySQL版本选择不同查询
+                    try:
+                        check_sql = """
+                            SELECT 
+                                CONSTRAINT_NAME as '约束名',
+                                CHECK_CLAUSE as '检查条件'
+                            FROM information_schema.CHECK_CONSTRAINTS 
+                            WHERE CONSTRAINT_SCHEMA = ? 
+                            AND TABLE_NAME = ?
+                        """
+                        check_params = [config['database'], table_name]
+                        check_result = await execute_sql.run_tool({
+                            "query": check_sql,
+                            "parameters": check_params
+                        })
+                    except Exception:
+                        # 回退到兼容语法
+                        check_sql = """
+                            SELECT 
+                                CONSTRAINT_NAME as '约束名',
+                                CHECK_CLAUSE as '检查条件'
+                            FROM information_schema.TABLE_CONSTRAINTS
+                            WHERE TABLE_SCHEMA = ? 
+                            AND TABLE_NAME = ? 
+                            AND CONSTRAINT_TYPE = 'CHECK'
+                        """
+                        check_params = [config['database'], table_name]
+                        check_result = await execute_sql.run_tool({
+                            "query": check_sql,
+                            "parameters": check_params
+                        })
+
                     results.extend(check_result)
-                except Exception:
-                    logger.warning("当前MySQL版本不支持检查约束查询")
+                except Exception as e:
+                    logger.warning(f"当前MySQL版本不支持检查约束查询:{e}")
 
             return results
 
@@ -639,7 +678,6 @@ class ShowColumnsTool(BaseHandler):
         )
 
     async def run_tool(self, arguments: Dict[str, Any]) -> Sequence[TextContent]:
-        """获取表的列信息"""
         try:
             table = arguments["table"]
             database = arguments.get("database")
@@ -687,7 +725,6 @@ class DescribeTableTool(BaseHandler):
         )
 
     async def run_tool(self, arguments: Dict[str, Any]) -> Sequence[TextContent]:
-        """描述表结构"""
         try:
             table = arguments["table"]
             database = arguments.get("database")
@@ -735,7 +772,6 @@ class ShowCreateTableTool(BaseHandler):
         )
 
     async def run_tool(self, arguments: Dict[str, Any]) -> Sequence[TextContent]:
-        """获取表的创建语句"""
         try:
             table = arguments["table"]
             database = arguments.get("database")
@@ -753,7 +789,6 @@ class ShowCreateTableTool(BaseHandler):
         except Exception as e:
             logger.error(f"获取创建语句失败: {str(e)}", exc_info=True)
             return [TextContent(type="text", text=f"获取创建语句失败: {str(e)}")]
-
 ########################################################################################################################
 
 

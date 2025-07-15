@@ -1,10 +1,8 @@
-import json
 import logging
 from typing import Dict, Any, Sequence, List
 import re
 from mcp import Tool
 from mcp.types import TextContent
-
 from server.tools.mysql.base import BaseHandler
 from server.config import AppConfigManager
 from server.tools.mysql import ExecuteSQL
@@ -12,8 +10,6 @@ from server.utils.logger import get_logger, configure_logger
 
 logger = get_logger(__name__)
 configure_logger(log_level=logging.INFO, log_filename="database.log")
-
-execute_sql = ExecuteSQL()
 
 
 class SlowQueryAnalyzer(BaseHandler):
@@ -67,6 +63,8 @@ class SlowQueryAnalyzer(BaseHandler):
 
     async def _get_slow_log_path(self, config: Dict) -> str:
         """获取慢查询日志路径"""
+        execute_sql = ExecuteSQL()
+
         sql = "SHOW VARIABLES LIKE 'slow_query_log_file';"
         result = await execute_sql.run_tool({"query": sql})
         if not result or not result[0].text:
@@ -167,98 +165,6 @@ class SlowQueryAnalyzer(BaseHandler):
 
 ########################################################################################################################
 ########################################################################################################################
-
-# 安全SQL验证模式（仅允许SELECT查询）
-SAFE_SELECT_PATTERN = re.compile(r'^\s*SELECT\b', re.IGNORECASE)
-
-
-class ExplainQuery(BaseHandler):
-    name = "explain_query"
-    description = (
-        "执行SQL查询的EXPLAIN分析，支持传统格式和JSON格式输出"
-        "(Perform EXPLAIN analysis on SQL queries, supporting traditional and JSON formats)"
-    )
-
-    def get_tool_description(self) -> Tool:
-        return Tool(
-            name=self.name,
-            description=self.description,
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "要分析的SQL查询语句（仅支持SELECT查询）"
-                    },
-                    "format": {
-                        "type": "string",
-                        "description": "输出格式：traditional（传统表格）或json",
-                        "default": "traditional",
-                        "enum": ["traditional", "json"]
-                    },
-                    "parameters": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "查询参数值",
-                        "default": []
-                    }
-                },
-                "required": ["query"]
-            }
-        )
-
-    def validate_query(self, query: str) -> bool:
-        """验证查询是否为安全的SELECT查询"""
-        return SAFE_SELECT_PATTERN.match(query) is not None
-
-    async def run_tool(self, arguments: Dict[str, Any]) -> Sequence[TextContent]:
-        """执行查询的EXPLAIN分析"""
-        try:
-            query = arguments["query"].strip()
-            output_format = arguments.get("format", "traditional")
-            parameters = arguments.get("parameters", [])
-
-            # 验证查询安全性
-            if not self.validate_query(query):
-                return [TextContent(type="text", text="错误: 仅支持SELECT查询的分析")]
-
-            # 构建EXPLAIN语句
-            if output_format == "json":
-                explain_query = f"EXPLAIN FORMAT=JSON {query}"
-            else:
-                explain_query = f"EXPLAIN {query}"
-
-            execute_sql = ExecuteSQL()
-
-            # 执行EXPLAIN查询
-            result = await execute_sql.run_tool({
-                "query": explain_query,
-                "parameters": parameters
-            })
-
-            # 对于JSON格式，尝试美化输出
-            if output_format == "json" and result:
-                try:
-                    # 提取JSON内容
-                    json_str = result[0].text
-                    # 尝试解析为JSON对象
-                    json_obj = json.loads(json_str)
-                    # 美化输出
-                    pretty_json = json.dumps(json_obj, indent=2, ensure_ascii=False)
-                    return [TextContent(type="text", text=pretty_json)]
-                except json.JSONDecodeError:
-                    # 如果解析失败，返回原始结果
-                    return result
-            else:
-                return result
-
-        except Exception as e:
-            logger.error(f"执行EXPLAIN分析失败: {str(e)}", exc_info=True)
-            return [TextContent(type="text", text=f"执行EXPLAIN分析失败: {str(e)}")]
-
-
-########################################################################################################################
-########################################################################################################################
 class AnalyzeQueryPerformance(BaseHandler):
     name = "analyze_query_performance"
     description = (
@@ -293,10 +199,6 @@ class AnalyzeQueryPerformance(BaseHandler):
             }
         )
 
-    def validate_query(self, query: str) -> bool:
-        """验证查询是否为安全的SELECT查询"""
-        return SAFE_SELECT_PATTERN.match(query) is not None
-
     async def run_tool(self, arguments: Dict[str, Any]) -> Sequence[TextContent]:
         """分析查询性能"""
         try:
@@ -304,17 +206,12 @@ class AnalyzeQueryPerformance(BaseHandler):
             iterations = max(1, min(arguments.get("iterations", 5), 20))  # 限制1-20次
             parameters = arguments.get("parameters", [])
 
-            # 验证查询安全性
-            if not self.validate_query(query):
-                return [TextContent(type="text", text="错误: 仅支持SELECT查询的分析")]
-
             execute_sql = ExecuteSQL()
             results = []
 
             # 1. 执行EXPLAIN分析
-            explain_result = await ExplainQuery().run_tool({
+            explain_result = await execute_sql.run_tool({
                 "query": query,
-                "format": "traditional",
                 "parameters": parameters
             })
             results.append(TextContent(type="text", text="=== 执行计划分析 ==="))

@@ -1,14 +1,10 @@
 import logging
 from typing import Dict, Any, Sequence
-
 from server.config import AppConfigManager
 from server.utils.logger import configure_logger, get_logger
-
 from mcp import Tool
 from mcp.types import TextContent
-
 from server.tools.mysql.base import BaseHandler
-
 from server.tools.mysql import ExecuteSQL
 
 logger = get_logger(__name__)
@@ -30,9 +26,7 @@ class GetDBHealthRunning(BaseHandler):
             description=self.description,
             inputSchema={
                 "type": "object",
-                "properties": {
-
-                }
+                "properties": {}
             }
         )
 
@@ -61,7 +55,6 @@ class GetDBHealthRunning(BaseHandler):
             sql = "SHOW FULL PROCESSLIST;SHOW VARIABLES LIKE 'max_connections';"
 
             logger.info(f"执行的 SQL 语句：{sql}")
-
             return await execute_sql.run_tool({"query": sql})
         except Exception as e:
             logger.error(f"执行查询时出错: {str(e)}")
@@ -119,7 +112,6 @@ class GetDBHealthRunning(BaseHandler):
 
 
 ########################################################################################################################
-
 class GetDBHealthIndexUsage(BaseHandler):
     name = "get_db_health_index_usage"
     description = (
@@ -241,7 +233,6 @@ class GetProcessList(BaseHandler):
         try:
             include_sleeping = arguments.get("include_sleeping", False)
             max_results = min(arguments.get("max_results", 20), 100)
-            execute_sql = ExecuteSQL()
 
             sql = """
                 SELECT 

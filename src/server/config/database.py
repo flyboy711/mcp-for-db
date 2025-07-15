@@ -280,7 +280,7 @@ class DatabaseManager:
         try:
             # 获取连接
             async with self._pool.acquire() as conn:
-                # === 实际执行操作前的最后一道防线 ===
+                # === 实际执行操作前的安全拦截 ===
                 async def safe_cursor():
                     async with conn.cursor(aiomysql.DictCursor) as cursor:
                         # 安全层: 阻止高危操作执行
@@ -760,11 +760,17 @@ async def main():
             # 使用增强后的 table_name 字段
             table_name = table.get('table_name', table.get('Tables_in_' + current_db.lower(), '未知表名'))
             print(f"表名: {table_name}")
+
+        print(f"当前执行计划结果:{await database_manager.execute_query("explain  select * from orders")}")
+
+        result = await database_manager.execute_query(f"SELECT * FROM t_users WHERE age > %(age1)s and age<%(age2)s", {
+            "age1": 25, "age2": 26})
+
+        print(result)
     finally:
-        # 确保关闭连接池
         await database_manager.close_pool()
 
 
 if __name__ == "__main__":
-    asyncio.run(test_database_operations())
-    # asyncio.run(main())
+    # asyncio.run(test_database_operations())
+    asyncio.run(main())
