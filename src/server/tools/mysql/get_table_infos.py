@@ -1,5 +1,7 @@
 import logging
 from typing import Dict, Sequence, Any
+
+from server.config.database import database_manager
 from server.utils.logger import configure_logger, get_logger
 from mcp import Tool
 from mcp.types import TextContent
@@ -154,104 +156,94 @@ class GetTableLock(BaseHandler):
         )
 
     async def run_tool(self, arguments: Dict[str, Any]) -> Sequence[TextContent]:
-        table_name = arguments["table_name"]
-        use_result = await self.get_table_use(self)
-        lock_result_5 = await self.get_table_lock_for_mysql5(self)
-        lock_result_8 = await self.get_table_lock_for_mysql8(self)
+        # 获取当前数据库版本
+        try:
+            # 使用 DatabaseManager 获取版本信息
+            version_info = await database_manager.execute_query("SELECT VERSION() AS version")
+            version = version_info[0]['version'] if version_info else ""
 
-        # 合并两个结果
-        combined_result = []
-        combined_result.extend(use_result)
-        combined_result.extend(lock_result_5)
-        combined_result.extend(lock_result_8)
+            # 解析主要版本号
+            major_version = int(version.split('.')[0]) if version and '.' in version else 0
+        except Exception as e:
+            logger.error(f"获取数据库版本失败: {str(e)}")
+            major_version = 0
 
-        return combined_result
+        # 获取表级锁情况（所有版本通用）
+        use_result = await self.get_table_use()
 
-    """
-        获取表级锁情况
-    """
+        # 根据版本选择行级锁查询方式
+        if major_version >= 8:
+            logger.info("检测到 MySQL 8.x+，使用性能模式获取锁信息")
+            lock_result = await self.get_table_lock_for_mysql8()
+        elif major_version >= 5:
+            logger.info("检测到 MySQL 5.x，使用信息模式获取锁信息")
+            lock_result = await self.get_table_lock_for_mysql5()
+        else:
+            logger.warning(f"不支持数据库版本: {version}")
+            lock_result = [TextContent(type="text", text=f"数据库版本 {version} 不支持锁查询")]
 
-    @staticmethod
+        # 合并结果
+        return [*use_result, *lock_result]
+
+    async def get_unified_lock_info(self) -> Sequence[TextContent]:
+        """统一的行级锁查询（适用于 MySQL 5.6+ 和 8.0+）"""
+        execute_sql = ExecuteSQL()
+        try:
+            # 尝试使用 sys.innodb_lock_waits 视图
+            sql = """
+                SELECT 
+                    waiting_pid AS '被阻塞进程ID',
+                    waiting_query AS '被阻塞查询',
+                    blocking_pid AS '阻塞进程ID',
+                    blocking_query AS '阻塞查询',
+                    wait_age_sec AS '等待时间(秒)',
+                    locked_table AS '锁对象',
+                    locked_index AS '锁定的索引',
+                    waiting_lock_mode AS '等待锁类型',
+                    blocking_lock_mode AS '持有锁类型'
+                FROM sys.innodb_lock_waits
+                ORDER BY wait_age_sec DESC
+            """
+            logger.info(f"执行的统一锁查询语句：{sql}")
+            return await execute_sql.run_tool({"query": sql})
+        except Exception as e:
+            logger.warning(f"sys.innodb_lock_waits 视图不可用: {str(e)}. 尝试版本特定查询")
+            return await self.get_table_lock_for_mysql5()
+
     async def get_table_use(self) -> Sequence[TextContent]:
+        """获取表级锁情况（所有版本通用）"""
         execute_sql = ExecuteSQL()
         try:
             sql = "SHOW OPEN TABLES WHERE In_use > 0;"
-
             logger.info(f"执行的 SQL 语句：{sql}")
-
             return await execute_sql.run_tool({"query": sql})
         except Exception as e:
-            logger.error(f"执行查询时出错: {str(e)}")
-            return [TextContent(type="text", text=f"执行查询时出错: {str(e)}")]
+            logger.error(f"表级锁查询失败: {str(e)}")
+            return [TextContent(text=f"表级锁查询失败: {str(e)}")]
 
-    """
-        获取行级锁情况--mysql5.6
-    """
-
-    @staticmethod
     async def get_table_lock_for_mysql5(self) -> Sequence[TextContent]:
+        """MySQL 5.x 行级锁查询"""
         execute_sql = ExecuteSQL()
-
         try:
-            sql = "SELECT p2.`HOST` 被阻塞方host,  p2.`USER` 被阻塞方用户, r.trx_id 被阻塞方事务id, "
-            sql += "r.trx_mysql_thread_id 被阻塞方线程号,TIMESTAMPDIFF(SECOND, r.trx_wait_started, CURRENT_TIMESTAMP) 等待时间, "
-            sql += "r.trx_query 被阻塞的查询, l.lock_table 阻塞方锁住的表, m.`lock_mode` 被阻塞方的锁模式, "
-            sql += "m.`lock_type` '被阻塞方的锁类型(表锁还是行锁)', m.`lock_index` 被阻塞方锁住的索引, "
-            sql += "m.`lock_space` 被阻塞方锁对象的space_id, m.lock_page 被阻塞方事务锁定页的数量, "
-            sql += "m.lock_rec 被阻塞方事务锁定记录的数量, m.lock_data 被阻塞方事务锁定记录的主键值, "
-            sql += "p.`HOST` 阻塞方主机, p.`USER` 阻塞方用户, b.trx_id 阻塞方事务id,b.trx_mysql_thread_id 阻塞方线程号, "
-            sql += "b.trx_query 阻塞方查询, l.`lock_mode` 阻塞方的锁模式, l.`lock_type` '阻塞方的锁类型(表锁还是行锁)',"
-            sql += "l.`lock_index` 阻塞方锁住的索引,l.`lock_space` 阻塞方锁对象的space_id,l.lock_page 阻塞方事务锁定页的数量,"
-            sql += "l.lock_rec 阻塞方事务锁定行的数量,  l.lock_data 阻塞方事务锁定记录的主键值,"
-            sql += "IF(p.COMMAND = 'Sleep', CONCAT(p.TIME, ' 秒'), 0) 阻塞方事务空闲的时间 "
-            sql += "FROM information_schema.INNODB_LOCK_WAITS w "
-            sql += "INNER JOIN information_schema.INNODB_TRX b ON b.trx_id = w.blocking_trx_id "
-            sql += "INNER JOIN information_schema.INNODB_TRX r ON r.trx_id = w.requesting_trx_id "
-            sql += "INNER JOIN information_schema.INNODB_LOCKS l ON w.blocking_lock_id = l.lock_id AND l.`lock_trx_id` = b.`trx_id` "
-            sql += "INNER JOIN information_schema.INNODB_LOCKS m ON m.`lock_id` = w.`requested_lock_id` AND m.`lock_trx_id` = r.`trx_id` "
-            sql += "INNER JOIN information_schema.PROCESSLIST p ON p.ID = b.trx_mysql_thread_id "
-            sql += "INNER JOIN information_schema.PROCESSLIST p2 ON p2.ID = r.trx_mysql_thread_id "
-            sql += "ORDER BY 等待时间 DESC;"
-
-            logger.info(f"执行的 SQL 语句：{sql}")
-
+            # 简化的 MySQL 5 锁查询
+            sql = """
+                SELECT 
+                    waiting_pid AS '被阻塞进程ID',
+                    waiting_query AS '被阻塞查询',
+                    blocking_pid AS '阻塞进程ID',
+                    blocking_query AS '阻塞查询',
+                    TIMESTAMPDIFF(SECOND, r.trx_wait_started, NOW()) AS '等待时间(秒)',
+                    CONCAT(k.OBJECT_SCHEMA, '.', k.OBJECT_NAME) AS '锁对象'
+                FROM sys.innodb_lock_waits
+                JOIN information_schema.innodb_trx b ON b.trx_id = blocking_trx_id
+                JOIN information_schema.innodb_trx r ON r.trx_id = waiting_trx_id
+                JOIN performance_schema.data_locks k ON k.ENGINE_LOCK_ID = blocking_engine_lock_id
+            """
+            logger.info(f"执行的 MySQL 5.x 锁查询语句：{sql}")
             return await execute_sql.run_tool({"query": sql})
         except Exception as e:
-            logger.error(f"执行查询时出错: {str(e)}")
-            return [TextContent(type="text", text=f"执行查询时出错: {str(e)}")]
-
-    """
-        获取行级锁情况--mysql8
-    """
-
-    @staticmethod
-    async def get_table_lock_for_mysql8(self) -> Sequence[TextContent]:
-        execute_sql = ExecuteSQL()
-
-        try:
-            sql = "SELECT p2.HOST AS '被阻塞方host',p2.USER AS '被阻塞方用户',r.trx_id AS '被阻塞方事务id', "
-            sql += "r.trx_mysql_thread_id AS '被阻塞方线程号',TIMESTAMPDIFF(SECOND, r.trx_wait_started, CURRENT_TIMESTAMP) AS '等待时间',"
-            sql += "r.trx_query AS '被阻塞的查询',dlr.OBJECT_SCHEMA AS '被阻塞方锁库',dlr.OBJECT_NAME AS '被阻塞方锁表',"
-            sql += "dlr.LOCK_MODE AS '被阻塞方锁模式', dlr.LOCK_TYPE AS '被阻塞方锁类型',dlr.INDEX_NAME AS '被阻塞方锁住的索引',"
-            sql += "dlr.LOCK_DATA AS '被阻塞方锁定记录的主键值',p.HOST AS '阻塞方主机',p.USER AS '阻塞方用户',b.trx_id AS '阻塞方事务id',"
-            sql += "b.trx_mysql_thread_id AS '阻塞方线程号',b.trx_query AS '阻塞方查询',dlb.LOCK_MODE AS '阻塞方锁模式',"
-            sql += "dlb.LOCK_TYPE AS '阻塞方锁类型',dlb.INDEX_NAME AS '阻塞方锁住的索引',dlb.LOCK_DATA AS '阻塞方锁定记录的主键值',"
-            sql += "IF(p.COMMAND = 'Sleep', CONCAT(p.TIME, ' 秒'), 0) AS '阻塞方事务空闲的时间' "
-            sql += "FROM performance_schema.data_lock_waits w "
-            sql += "JOIN performance_schema.data_locks dlr ON w.REQUESTING_ENGINE_LOCK_ID = dlr.ENGINE_LOCK_ID "
-            sql += "JOIN performance_schema.data_locks dlb ON w.BLOCKING_ENGINE_LOCK_ID = dlb.ENGINE_LOCK_ID "
-            sql += "JOIN information_schema.innodb_trx r ON w.REQUESTING_ENGINE_TRANSACTION_ID = r.trx_id "
-            sql += "JOIN information_schema.innodb_trx b ON w.BLOCKING_ENGINE_TRANSACTION_ID = b.trx_id "
-            sql += "JOIN information_schema.processlist p ON b.trx_mysql_thread_id = p.ID "
-            sql += "JOIN information_schema.processlist p2 ON r.trx_mysql_thread_id = p2.ID "
-            sql += "ORDER BY '等待时间' DESC;"
-
-            logger.info(f"执行的 SQL 语句：{sql}")
-
-            return await execute_sql.run_tool({"query": sql})
-        except Exception as e:
-            logger.error(f"执行查询时出错: {str(e)}")
-            return [TextContent(type="text", text=f"执行查询时出错: {str(e)}")]
+            logger.error(f"MySQL 5.x 锁查询失败: {str(e)}")
+            return [TextContent(text=f"MySQL 5.x 锁查询失败: {str(e)}")]
 
 
 ########################################################################################################################
@@ -362,14 +354,12 @@ class GetDatabaseInfo(BaseHandler):
                 sql += """
                 UNION ALL
                 SELECT 
-                    'Host' as info_type, 
-                    ？ as value
+                    'Host' as info_type, ? as value
                 UNION ALL
                 SELECT 
-                    'Port' as info_type, 
-                    ？ as value
+                    'Port' as info_type, ? as value
                 """
-                params = [str(config['host']), str(config['port'])]
+                params = [config['host'], config['port']]
             else:
                 params = []
 
@@ -416,7 +406,7 @@ class GetDatabaseTables(BaseHandler):
                 FROM information_schema.TABLES
                 WHERE TABLE_SCHEMA = ?
             """
-            params = [str(config['database'])]
+            params = [config['database']]
 
             if not include_empty:
                 sql += " AND TABLE_COMMENT != ''"
@@ -559,55 +549,60 @@ class CheckTableConstraints(BaseHandler):
 
             config = AppConfigManager().get_database_config()
             execute_sql = ExecuteSQL()
+            db_name = config['database']
 
             results = []
 
-            # 外键约束查询
+            # 外键约束查询 - 兼容 MySQL 5.7
             if include_fk:
-                # 根据MySQL版本选择不同查询
-                try:
-                    # 尝试MySQL 8.0+语法
-                    fk_sql = """
-                        SELECT 
-                            CONSTRAINT_NAME as '约束名',
-                            COLUMN_NAME as '列名',
-                            REFERENCED_TABLE_NAME as '引用表',
-                            REFERENCED_COLUMN_NAME as '引用列',
-                            UPDATE_RULE as '更新规则',
-                            DELETE_RULE as '删除规则'
-                        FROM information_schema.REFERENTIAL_CONSTRAINTS 
-                        WHERE CONSTRAINT_SCHEMA = ? 
-                        AND TABLE_NAME = ? 
-                    """
-                    fk_params = [config['database'], table_name]
-                    fk_result = await execute_sql.run_tool({
-                        "query": fk_sql,
-                        "parameters": fk_params
-                    })
-                except Exception:
-                    # 回退到兼容语法
-                    fk_sql = """
-                        SELECT 
-                            CONSTRAINT_NAME as '约束名',
-                            COLUMN_NAME as '列名',
-                            REFERENCED_TABLE_NAME as '引用表',
-                            REFERENCED_COLUMN_NAME as '引用列'
-                        FROM information_schema.key_column_usage 
-                        WHERE table_schema = ? 
-                        AND table_name = ? 
-                        AND REFERENCED_TABLE_NAME IS NOT NULL
-                    """
-                    fk_params = [config['database'], table_name]
-                    fk_result = await execute_sql.run_tool({
-                        "query": fk_sql,
-                        "parameters": fk_params
-                    })
+                fk_sql = """
+                    SELECT 
+                        rc.CONSTRAINT_NAME as '约束名',
+                        kcu.COLUMN_NAME as '列名',
+                        kcu.REFERENCED_TABLE_NAME as '引用表',
+                        kcu.REFERENCED_COLUMN_NAME as '引用列',
+                        rc.UPDATE_RULE as '更新规则',
+                        rc.DELETE_RULE as '删除规则'
+                    FROM information_schema.TABLE_CONSTRAINTS tc
+                    JOIN information_schema.KEY_COLUMN_USAGE kcu
+                        ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
+                        AND tc.TABLE_NAME = kcu.TABLE_NAME
+                        AND tc.TABLE_SCHEMA = kcu.TABLE_SCHEMA
+                    LEFT JOIN information_schema.REFERENTIAL_CONSTRAINTS rc
+                        ON tc.CONSTRAINT_NAME = rc.CONSTRAINT_NAME
+                        AND tc.TABLE_NAME = rc.TABLE_NAME
+                        AND tc.TABLE_SCHEMA = rc.CONSTRAINT_SCHEMA
+                    WHERE tc.CONSTRAINT_TYPE = 'FOREIGN KEY'
+                    AND tc.TABLE_SCHEMA = ?
+                    AND tc.TABLE_NAME = ?
+                """
+                fk_params = [db_name, table_name]
+                fk_result = await execute_sql.run_tool({
+                    "query": fk_sql,
+                    "parameters": fk_params
+                })
                 results.extend(fk_result)
 
-            # 检查约束查询
+            # 检查约束查询 - 兼容 MySQL 5.7
             if include_checks:
                 try:
-                    # 根据MySQL版本选择不同查询
+                    check_sql = """
+                        SELECT 
+                            CONSTRAINT_NAME as '约束名',
+                            '' as '检查条件'  -- MySQL 5.7 没有存储检查条件
+                        FROM information_schema.TABLE_CONSTRAINTS
+                        WHERE TABLE_SCHEMA = ?
+                        AND TABLE_NAME = ?
+                        AND CONSTRAINT_TYPE = 'CHECK'
+                    """
+                    check_params = [db_name, table_name]
+                    check_result = await ExecuteSQL().run_tool({
+                        "query": check_sql,
+                        "parameters": check_params
+                    })
+                    results.extend(check_result)
+                except Exception as e:
+                    # 尝试 MySQL 8.0 的查询（如果失败则跳过）
                     try:
                         check_sql = """
                             SELECT 
@@ -617,31 +612,14 @@ class CheckTableConstraints(BaseHandler):
                             WHERE CONSTRAINT_SCHEMA = ? 
                             AND TABLE_NAME = ?
                         """
-                        check_params = [config['database'], table_name]
-                        check_result = await execute_sql.run_tool({
+                        check_params = [db_name, table_name]
+                        check_result = await ExecuteSQL().run_tool({
                             "query": check_sql,
                             "parameters": check_params
                         })
+                        results.extend(check_result)
                     except Exception:
-                        # 回退到兼容语法
-                        check_sql = """
-                            SELECT 
-                                CONSTRAINT_NAME as '约束名',
-                                CHECK_CLAUSE as '检查条件'
-                            FROM information_schema.TABLE_CONSTRAINTS
-                            WHERE TABLE_SCHEMA = ? 
-                            AND TABLE_NAME = ? 
-                            AND CONSTRAINT_TYPE = 'CHECK'
-                        """
-                        check_params = [config['database'], table_name]
-                        check_result = await execute_sql.run_tool({
-                            "query": check_sql,
-                            "parameters": check_params
-                        })
-
-                    results.extend(check_result)
-                except Exception as e:
-                    logger.warning(f"当前MySQL版本不支持检查约束查询:{e}")
+                        logger.warning(f"检查约束查询失败: {e}")
 
             return results
 

@@ -1,21 +1,30 @@
 import asyncio
 from server.config.database import database_manager
 from server.tools.mysql.get_table_infos import CheckTableConstraints, GetDatabaseTables, ShowColumnsTool, \
-    DescribeTableTool, AnalyzeTableStats, GetTableLock
+    DescribeTableTool, AnalyzeTableStats, GetTableLock, GetDatabaseInfo, GetTableDesc
 from server.tools.mysql.get_table_infos import ShowCreateTableTool
+
+from server.tools.mysql import GetDBHealthRunning
 
 
 async def main():
     try:
-        checkTableConstraints = CheckTableConstraints()
-        ret = await checkTableConstraints.run_tool({
-            "table_name": "timeout_0",
-        })
+        getDBHealthRunning = GetDBHealthRunning()
+        ret = await getDBHealthRunning.run_tool({"table_name": "test_table"})
         print(ret)
 
-        getTableLock = GetTableLock()
-        ret = await getTableLock.run_tool({"table_name": "test_table"})
-        print(ret)
+        # getTableLock = GetTableLock()
+        # ret = await getTableLock.run_tool({"table_name": "test_table"})
+        # print(ret)
+
+
+
+
+        # checkTableConstraints = CheckTableConstraints()
+        # ret = await checkTableConstraints.run_tool({
+        #     "table_name": "timeout_0",
+        # })
+        # print(ret)
 
         # getDatabaseTables = GetDatabaseTables()
         # ret = await getDatabaseTables.run_tool({
@@ -46,6 +55,15 @@ async def main():
         #     "table_name": "timeout_0",
         # })
         # print(ret)
+
+        # tool = GetDatabaseInfo()
+        # ret = await tool.run_tool({"include_connection_info": True})
+        # print(ret)
+
+        # tool = GetTableDesc()
+        # ret = await tool.run_tool({"text": "timeout_0"})
+        # print(ret)
+
 
     finally:
         # 使用await调用异步方法

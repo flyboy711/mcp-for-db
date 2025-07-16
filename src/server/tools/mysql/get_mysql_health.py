@@ -10,8 +10,6 @@ from server.tools.mysql import ExecuteSQL
 logger = get_logger(__name__)
 configure_logger(log_level=logging.INFO, log_filename="get_mysql_health.log")
 
-execute_sql = ExecuteSQL()
-
 
 ########################################################################################################################
 class GetDBHealthRunning(BaseHandler):
@@ -31,7 +29,7 @@ class GetDBHealthRunning(BaseHandler):
         )
 
     async def run_tool(self, arguments: Dict[str, Any]) -> Sequence[TextContent]:
-        lock_result = await self.get_lock(arguments)
+        # lock_result = await self.get_lock(arguments)
         processlist_result = await self.get_processlist(arguments)
         status_result = await self.get_status(arguments)
         trx_result = await self.get_trx(arguments)
@@ -39,7 +37,7 @@ class GetDBHealthRunning(BaseHandler):
         # 合并结果
         combined_result = []
         combined_result.extend(processlist_result)
-        combined_result.extend(lock_result)
+        # combined_result.extend(lock_result)
         combined_result.extend(trx_result)
         combined_result.extend(status_result)
 
@@ -49,8 +47,9 @@ class GetDBHealthRunning(BaseHandler):
         获取连接情况
     """
 
-    @staticmethod
     async def get_processlist(self, arguments: Dict[str, Any]) -> Sequence[TextContent]:
+        execute_sql = ExecuteSQL()
+
         try:
             sql = "SHOW FULL PROCESSLIST;SHOW VARIABLES LIKE 'max_connections';"
 
@@ -64,8 +63,9 @@ class GetDBHealthRunning(BaseHandler):
         获取运行情况
     """
 
-    @staticmethod
     async def get_status(self, arguments: Dict[str, Any]) -> Sequence[TextContent]:
+        execute_sql = ExecuteSQL()
+
         try:
             sql = "SHOW ENGINE INNODB STATUS;"
 
@@ -80,8 +80,9 @@ class GetDBHealthRunning(BaseHandler):
         获取事务情况
     """
 
-    @staticmethod
     async def get_trx(self, arguments: Dict[str, Any]) -> Sequence[TextContent]:
+        execute_sql = ExecuteSQL()
+
         try:
             sql = "SELECT * FROM INFORMATION_SCHEMA.INNODB_TRX;"
 
@@ -96,19 +97,44 @@ class GetDBHealthRunning(BaseHandler):
         获取锁情况
     """
 
-    @staticmethod
     async def get_lock(self, arguments: Dict[str, Any]) -> Sequence[TextContent]:
+        execute_sql = ExecuteSQL()
+
         try:
-            sql = "SHOW OPEN TABLES WHERE In_use > 0;select * from information_schema.innodb_locks;select * from information_schema.innodb_lock_waits;"
-            sql += "select * from performance_schema.data_lock_waits;"
-            sql += "select * from performance_schema.data_locks;"
 
-            logger.info(f"执行的 SQL 语句：{sql}")
+            results = []
 
-            return await execute_sql.run_tool({"query": sql})
+            # 所有版本通用的表级锁查询
+            show_open_tables = "SHOW OPEN TABLES WHERE In_use > 0;"
+            open_tables_result = await execute_sql.run_tool({"query": show_open_tables})
+            results.extend(open_tables_result)
+
+            # 根据版本选择行级锁查询
+
+            lock_sql = """
+                    SELECT 
+                        r.trx_mysql_thread_id AS '被阻塞进程ID',
+                        r.trx_query AS '被阻塞查询',
+                        b.trx_mysql_thread_id AS '阻塞进程ID',
+                        b.trx_query AS '阻塞查询',
+                        TIMESTAMPDIFF(SECOND, r.trx_wait_started, NOW()) AS '等待时间(秒)',
+                        l.lock_table AS '锁对象'
+                    FROM information_schema.innodb_lock_waits w
+                    JOIN information_schema.innodb_trx b ON b.trx_id = w.blocking_trx_id
+                    JOIN information_schema.innodb_trx r ON r.trx_id = w.requesting_trx_id
+                    JOIN information_schema.innodb_locks l ON w.blocking_lock_id = l.lock_id
+
+                """
+
+            # 执行版本特定的锁查询
+            logger.info(f"执行的 SQL 语句：{lock_sql}")
+            lock_result = await execute_sql.run_tool({"query": lock_sql})
+            results.extend(lock_result)
+            return results
+
         except Exception as e:
-            logger.error(f"执行查询时出错: {str(e)}")
-            return [TextContent(type="text", text=f"执行查询时出错: {str(e)}")]
+            logger.error(f"获取锁信息时出错: {str(e)}")
+            return [TextContent(type="text", text=f"获取锁信息时出错: {str(e)}")]
 
 
 ########################################################################################################################
@@ -151,8 +177,9 @@ class GetDBHealthIndexUsage(BaseHandler):
         获取冗余索引情况
     """
 
-    @staticmethod
     async def get_count_zero(self, arguments: Dict[str, Any], config) -> Sequence[TextContent]:
+        execute_sql = ExecuteSQL()
+
         try:
             sql = "SELECT object_name,index_name,count_star from performance_schema.table_io_waits_summary_by_index_usage "
             sql += f"WHERE object_schema = '{config['database']}' and count_star = 0 AND sum_timer_wait = 0 ;"
@@ -168,8 +195,9 @@ class GetDBHealthIndexUsage(BaseHandler):
         获取性能较差的索引情况
     """
 
-    @staticmethod
     async def get_max_timer(self, arguments: Dict[str, Any], config) -> Sequence[TextContent]:
+        execute_sql = ExecuteSQL()
+
         try:
             sql = "SELECT object_schema,object_name,index_name,(max_timer_wait / 1000000000000) max_timer_wait "
             sql += f"FROM performance_schema.table_io_waits_summary_by_index_usage where object_schema = '{config['database']}' "
@@ -186,8 +214,9 @@ class GetDBHealthIndexUsage(BaseHandler):
         获取未使用索引查询时间大于30秒的top5情况
     """
 
-    @staticmethod
     async def get_not_used_index(self, arguments: Dict[str, Any], config) -> Sequence[TextContent]:
+        execute_sql = ExecuteSQL()
+
         try:
             sql = "SELECT object_schema,object_name, (max_timer_wait / 1000000000000) max_timer_wait "
             sql += f"FROM performance_schema.table_io_waits_summary_by_index_usage where object_schema = '{config['database']}' "
@@ -230,6 +259,8 @@ class GetProcessList(BaseHandler):
 
     async def run_tool(self, arguments: Dict[str, Any]) -> Sequence[TextContent]:
         """获取当前进程列表"""
+        execute_sql = ExecuteSQL()
+
         try:
             include_sleeping = arguments.get("include_sleeping", False)
             max_results = min(arguments.get("max_results", 20), 100)
