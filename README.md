@@ -51,7 +51,7 @@ pip install --upgrade pip setuptools wheel build twine
 # 构建项目
 python -m build
 #本地安装
-python install .
+pip install .
 # 本地部署
 dw_mcp_for_db
 

@@ -3,7 +3,7 @@ from typing import Dict, Any, Sequence
 from mcp import Tool
 from mcp.types import TextContent
 
-from server.config import AppConfigManager, EnvFileManager
+from server.config import EnvFileManager, AppConfigManager
 from server.tools.mysql.base import BaseHandler
 from server.config.database import database_manager
 from server.utils.logger import get_logger, configure_logger
@@ -30,7 +30,7 @@ class SwitchDatabase(BaseHandler):
                 "type": "object",
                 "properties": {
                     "host": {"type": "string", "description": "数据库主机地址"},
-                    "port": {"type": "integer", "description": "数据库端口"},
+                    "port": {"type": "string", "description": "数据库端口"},
                     "user": {"type": "string", "description": "数据库用户名"},
                     "password": {"type": "string", "description": "数据库密码"},
                     "database": {"type": "string", "description": "数据库名称"},
@@ -55,18 +55,12 @@ class SwitchDatabase(BaseHandler):
             TextContent: 切换结果信息
         """
         try:
-            # 1. 权限验证 - 只有admin角色可以切换数据库
-            current_role = AppConfigManager().get_database_config().get("role", "readonly")
-            if current_role != "admin":
-                return [TextContent(type="text",
-                                    text="权限不足: 只有管理员角色可以切换数据库配置")]
-
-            # 2. 验证输入参数
+            # 验证输入参数
             errors = self._validate_input(arguments)
             if errors:
                 return [TextContent(type="text", text=f"输入验证失败: {errors}")]
 
-            # 3. 准备新配置
+            # 准备新配置
             new_config = {
                 "MYSQL_HOST": arguments["host"],
                 "MYSQL_PORT": arguments["port"],
@@ -78,6 +72,8 @@ class SwitchDatabase(BaseHandler):
 
             # 4. 更新配置
             EnvFileManager.update(new_config)
+
+            AppConfigManager().refresh_config()
 
             # 5. 重新初始化数据库连接池
             await self._reinitialize_db_pool()
@@ -99,7 +95,7 @@ class SwitchDatabase(BaseHandler):
 
         # 端口验证
         port = arguments.get("port", 0)
-        if not isinstance(port, int) or port <= 0 or port > 65535:
+        if not isinstance(port, str) or int(port) <= 0 or int(port) > 65535:
             errors.append("端口号无效")
 
         # 用户验证
@@ -124,7 +120,6 @@ class SwitchDatabase(BaseHandler):
 
         return ", ".join(errors)
 
-    @staticmethod
     async def _reinitialize_db_pool(self) -> None:
         """重新初始化数据库连接池"""
         if hasattr(database_manager, "close_pool") and callable(database_manager.close_pool):

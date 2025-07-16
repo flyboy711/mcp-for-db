@@ -29,6 +29,7 @@ poetry.lock         # poetry生成（按需添加）
 ### 构建和测试输出 ###
 build/         # 构建输出目录
 dist/          # 分发包目录
+dist/**
 .coverage      # 测试覆盖率报告
 htmlcov/       # HTML覆盖率报告
 .pytest_cache/ # pytest缓存
@@ -39,6 +40,7 @@ wheels/
 ### 日志文件 ###
 log/          # 日志目录
 logs/          # 日志目录
+logs/**
 *.iml
 *.xml
 *.log

@@ -8,7 +8,6 @@ from .switch_database import SwitchDatabase
 from .use_prompt_queryTableData import UsePromptQueryTableData
 from .mysql_analyzer import SlowQueryAnalyzer, AnalyzeQueryPerformance
 from .IndexAdvisor import IndexAdvisor
-from .alertprocessor import DDLAlertProcessor, AlertDiscoveryTool, AlertDataAnalyzer
 
 __all__ = [
     "ExecuteSQL",
@@ -31,9 +30,5 @@ __all__ = [
     "ShowCreateTableTool",
     "DescribeTableTool",
     "ShowColumnsTool",
-    "IndexAdvisor",
-    "DDLAlertProcessor",
-    "AlertDiscoveryTool",
-    "AlertDataAnalyzer"
-
+    "IndexAdvisor"
 ]

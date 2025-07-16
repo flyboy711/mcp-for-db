@@ -3,8 +3,6 @@ from typing import List, Set, Any
 from enum import IntEnum, Enum
 from dotenv import load_dotenv
 
-load_dotenv()
-
 
 def strtobool(value: Any) -> bool:
     """将字符串转换为布尔值"""
@@ -70,7 +68,11 @@ class AppConfigManager:
     }
 
     def __init__(self):
-        load_dotenv()  # 加载环境变量
+        load_dotenv()
+        self._load_config()
+
+    def refresh_config(self) -> None:
+        """强制重新加载配置"""
         self._load_config()
 
     def _load_config(self) -> None:
@@ -160,6 +162,7 @@ class AppConfigManager:
 
     def get_database_config(self) -> dict:
         """获取数据库连接配置"""
+        self._load_config()
         return {
             'host': self.MYSQL_HOST,
             'port': self.MYSQL_PORT,
@@ -238,8 +241,16 @@ class EnvFileManager:
     """环境文件管理封装"""
 
     @staticmethod
-    def update(update: dict, env_path: str = ".env") -> None:
+    def update(update: dict, env_p: str = None) -> None:
         """原子化更新.env文件 - 修复换行问题"""
+
+        if env_p is None:
+            # 获取当前文件所在目录的绝对路径
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            env_path = os.path.join(current_dir, ".env")
+        else:
+            env_path = env_p
+
         # 读取现有内容
         lines = []
         if os.path.exists(env_path):
@@ -312,6 +323,14 @@ class EnvFileManager:
         with open(env_path, "w", encoding="utf-8") as f:
             f.writelines(new_lines)
 
+        for key, value in update.items():
+            # 直接更新os.environ
+            os.environ[key] = str(value)
+            # dotenv 的缓存更新
+            if key in os.environ:
+                del os.environ[key]  # 强制刷新
+            os.environ[key] = str(value)
+
 
 if __name__ == "__main__":
     config = AppConfigManager()
@@ -339,7 +358,25 @@ if __name__ == "__main__":
             "DB_POL_MAX_SIZE": "500"
         }
 
-        EnvFileManager.update(updates)
+        arguments = {
+            "host": "localhost",
+            "port": "13308",
+            "user": "videx",
+            "password": "password",
+            "database": "tpch_tiny",
+            "role": "admin"
+        }
+
+        new_config = {
+            "MYSQL_HOST": arguments["host"],
+            "MYSQL_PORT": arguments["port"],
+            "MYSQL_USER": arguments["user"],
+            "MYSQL_PASSWORD": arguments["password"],
+            "MYSQL_DATABASE": arguments["database"],
+            "MYSQL_ROLE": arguments["role"]
+        }
+
+        EnvFileManager.update(new_config)
         print("\n环境变量更新成功")
 
         # 重新加载配置查看更新效果

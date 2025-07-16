@@ -1,6 +1,6 @@
 [project]
 name = "mcp_for_db"
-version = "0.1.0"
+version = "0.0.1"
 description = "Continuously develop integrated MCP servers dedicated to databases to advance the application of AI for DB."
 readme = "README.md"
 requires-python = ">=3.12"
