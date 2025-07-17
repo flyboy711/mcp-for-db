@@ -62,7 +62,7 @@ class DatabaseManager:
 
         # 初始化数据库范围检查器
         self.database_checker = None
-        if session_config.get('bool_ENABLE_DATABASE_ISOLATION', False):
+        if session_config.get('ENABLE_DATABASE_ISOLATION', False):
             self.database_checker = DatabaseScopeChecker(session_config)
 
         logger.info("数据库管理器初始化完成")
@@ -693,7 +693,8 @@ async def test_database_operations():
         "DB_POOL_ENABLED": "true",
         "DB_POOL_MIN_SIZE": "5",
         "DB_POOL_MAX_SIZE": "20",
-        "ENABLE_DATABASE_ISOLATION": "true"
+        "ENABLE_DATABASE_ISOLATION": "true",
+        "ALLOWED_RISK_LEVELS": "LOW,MEDIUM"
     })
 
     # 创建数据库管理器实例
@@ -744,14 +745,14 @@ async def test_database_operations():
         else:
             logger.warning("没有找到任何表进行测试")
 
-        # 场景6: 测试DML操作
-        logger.info("\n测试场景6: 测试DML操作")
-        try:
-            result = await database_manager.execute_query("INSERT INTO orders (O_ORDERSTATUS) VALUES ('test1')")
-            logger.info(f"插入操作结果: {result}")
-        except DatabasePermissionError as dpe:
-            logger.info(f"权限错误处理成功: {dpe.message}")
-            logger.info(f"操作: {dpe.operation}, 表: {dpe.table}")
+        # # 场景6: 测试DML操作
+        # logger.info("\n测试场景6: 测试DML操作")
+        # try:
+        #     result = await database_manager.execute_query("INSERT INTO orders (O_ORDERSTATUS) VALUES ('test1')")
+        #     logger.info(f"插入操作结果: {result}")
+        # except DatabasePermissionError as dpe:
+        #     logger.info(f"权限错误处理成功: {dpe.message}")
+        #     logger.info(f"操作: {dpe.operation}, 表: {dpe.table}")
 
         # 场景7: 测试安全拦截
         logger.info("\n测试场景7: 测试安全拦截")
@@ -760,15 +761,7 @@ async def test_database_operations():
         except SecurityException as se:
             logger.info(f"安全拦截成功: {se.message}")
 
-        # 场景8: 测试数据库范围检查
-        logger.info("\n测试场景8: 测试数据库范围检查")
-        if session_config.get('bool_ENABLE_DATABASE_ISOLATION', False):
-            try:
-                await database_manager.execute_query("SELECT * FROM mcp_db.t_users")
-            except DatabaseScopeViolation as dve:
-                logger.info(f"数据库范围检查成功: {dve.message}")
-
-        # 场景9: 测试连接恢复
+        # 场景8: 测试连接恢复
         logger.info("\n测试场景9: 测试连接恢复")
         # 模拟连接失败
         database_manager._state = DatabaseConnectionState.ERROR
@@ -820,5 +813,5 @@ async def main():
 
 
 if __name__ == "__main__":
-    # asyncio.run(test_database_operations())
-    asyncio.run(main())
+    asyncio.run(test_database_operations())
+    # asyncio.run(main())

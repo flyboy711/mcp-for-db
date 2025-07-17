@@ -116,16 +116,28 @@ class SessionConfigManager:
             env_str if env_str in ('development', 'production') else 'development').value
 
         # 转换风险等级
-        risk_str = raw_config.get('ALLOWED_RISK_LEVELS', '')
-        normalized['ALLOWED_RISK_LEVELS'] = ','.join(
-            level.name for level in parse_risk_levels(risk_str)
-        )
+        if 'ALLOWED_RISK_LEVELS' in raw_config:
+            risk_str = str(raw_config['ALLOWED_RISK_LEVELS'])
+            normalized['ALLOWED_RISK_LEVELS'] = self._parse_risk_levels(risk_str)
+        else:
+            # 如果没有提供，使用默认值
+            normalized['ALLOWED_RISK_LEVELS'] = set()
 
         # 处理阻止模式
-        patterns = raw_config.get('BLOCKED_PATTERNS', '')
-        normalized['BLOCKED_PATTERNS'] = ','.join(
-            p.strip().upper() for p in patterns.split(',') if p.strip()
-        )
+        if 'BLOCKED_PATTERNS' in raw_config:
+            patterns = raw_config['BLOCKED_PATTERNS']
+            if isinstance(patterns, str):
+                self.config['BLOCKED_PATTERNS'] = [
+                    p.strip().upper() for p in patterns.split(',') if p.strip()
+                ]
+            elif isinstance(patterns, list):
+                self.config['BLOCKED_PATTERNS'] = [
+                    str(p).strip().upper() for p in patterns
+                ]
+            else:
+                self.config['BLOCKED_PATTERNS'] = []
+        else:
+            self.config['BLOCKED_PATTERNS'] = []
 
         # 转换数据库访问级别
         if 'DATABASE_ACCESS_LEVEL' in raw_config:
@@ -213,6 +225,41 @@ class SessionConfigManager:
         except ValueError:
             return default
 
+    def _parse_risk_levels(self, levels_str: str) -> Set[SQLRiskLevel]:
+        """解析风险等级字符串为 SQLRiskLevel 枚举集合"""
+        allowed_levels: Set[SQLRiskLevel] = set()
+        if not levels_str:
+            return allowed_levels
+
+        # 确保 levels_str 是字符串
+        levels_str = str(levels_str).upper()
+
+        for level_str in levels_str.split(','):
+            level_str = level_str.strip()
+            if not level_str:
+                continue
+
+            # 尝试按名称匹配
+            try:
+                level_value = SQLRiskLevel[level_str]
+                allowed_levels.add(level_value)
+                continue
+            except KeyError:
+                pass
+
+            # 尝试按值匹配
+            try:
+                level_value = int(level_str)
+                if level_value in {item.value for item in SQLRiskLevel}:
+                    allowed_levels.add(SQLRiskLevel(level_value))
+                    continue
+            except (ValueError, TypeError):
+                pass
+
+            logger.warning(f"忽略无效的风险等级: {level_str}")
+
+        return allowed_levels
+
     def _load_from_env(self) -> None:
         # 服务器配置
         self.config['HOST'] = os.getenv('HOST', '127.0.0.1')
@@ -241,12 +288,19 @@ class SessionConfigManager:
         self.config['DB_POOL_ACQUIRE_TIMEOUT'] = self._parse_float_env('DB_POOL_ACQUIRE_TIMEOUT', 10.0)
 
         # 安全配置
-        self.config['ALLOWED_RISK_LEVELS'] = ','.join(
-            l.name for l in parse_risk_levels(os.getenv('ALLOWED_RISK_LEVELS', ''))
-        )
+        # 处理风险等级
+        risk_str = os.getenv('ALLOWED_RISK_LEVELS', '')
+        self.config['ALLOWED_RISK_LEVELS'] = self._parse_risk_levels(risk_str)
+
         self.config['ALLOW_SENSITIVE_INFO'] = self._parse_bool_env('ALLOW_SENSITIVE_INFO', False)
         self.config['MAX_SQL_LENGTH'] = self._parse_int_env('MAX_SQL_LENGTH', 1000)
-        self.config['BLOCKED_PATTERNS'] = ','.join(get_blocked_patterns())
+
+        # 处理阻止模式
+        blocked_str = os.getenv('BLOCKED_PATTERNS', '')
+        self.config['BLOCKED_PATTERNS'] = [
+            p.strip().upper() for p in blocked_str.split(',') if p.strip()
+        ]
+
         self.config['ENABLE_QUERY_CHECK'] = self._parse_bool_env('ENABLE_QUERY_CHECK', True)
         self.config['ENABLE_DATABASE_ISOLATION'] = _get_db_isolation_setting()
         self.config['DATABASE_ACCESS_LEVEL'] = _get_db_access_level().value
@@ -266,101 +320,6 @@ class SessionConfigManager:
 
     def _compute_config_hash(self) -> str:
         return hashlib.md5(str(self.config).encode('utf-8')).hexdigest()
-
-
-class EnvFileManager:
-    """环境文件管理封装"""
-
-    @staticmethod
-    def update(update: dict, env_p: str = None) -> None:
-        """原子化更新.env文件 - 修复换行问题"""
-
-        if env_p is None:
-            # 获取当前文件所在目录的绝对路径
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            env_path = os.path.join(current_dir, ".env")
-        else:
-            env_path = env_p
-
-        # 读取现有内容
-        lines = []
-        if os.path.exists(env_path):
-            with open(env_path, "r", encoding="utf-8") as f:
-                lines = f.readlines()
-
-        # 创建更新后的内容列表
-        updated_keys = set()
-        new_lines = []
-
-        # 处理现有行
-        for line in lines:
-            stripped_line = line.strip()
-            # 跳过空行和注释行
-            if not stripped_line or stripped_line.startswith("#"):
-                new_lines.append(line)
-                continue
-
-            # 找到键值对
-            if "=" in line:
-                key, remaining = line.split("=", 1)
-                key = key.strip()
-
-                # 处理键值对行
-                if key in update:
-                    # 处理注释
-                    comment_part = ""
-                    if "#" in remaining:
-                        value_part, comment = remaining.split("#", 1)
-                        comment_part = f" #{comment}"
-                    else:
-                        value_part = remaining
-
-                    # 替换值并添加回新行
-                    formatted_value = update[key]
-                    if any(char in formatted_value for char in " #\"'") and not formatted_value.startswith(('"', "'")):
-                        if '"' in formatted_value:
-                            formatted_value = f"'{formatted_value}'"
-                        else:
-                            formatted_value = f'"{formatted_value}"'
-
-                    new_line = f"{key}={formatted_value}{comment_part}"
-                    # 确保添加换行符
-                    new_lines.append(new_line + "\n")
-                    updated_keys.add(key)
-                else:
-                    # 保留未修改的行，保持原始换行符
-                    new_lines.append(line)
-            else:
-                new_lines.append(line)
-
-        # 添加新配置项，确保每个配置项独立成行
-        for key, value in update.items():
-            if key not in updated_keys:
-                # 处理特殊字符
-                if any(char in value for char in " #\"'"):
-                    if '"' in value:
-                        formatted_value = f"'{value}'"
-                    else:
-                        formatted_value = f'"{value}"'
-                else:
-                    formatted_value = value
-
-                # 确保新行独立且包含换行符
-                new_line = f"{key}={formatted_value}"
-                new_lines.append("\n")  # 先添加换行符与之前的内容分隔
-                new_lines.append(new_line + "\n")
-
-        # 原子写入
-        with open(env_path, "w", encoding="utf-8") as f:
-            f.writelines(new_lines)
-
-        for key, value in update.items():
-            # 直接更新os.environ
-            os.environ[key] = str(value)
-            # dotenv 的缓存更新
-            if key in os.environ:
-                del os.environ[key]  # 强制刷新
-            os.environ[key] = str(value)
 
 
 # 示例使用
@@ -416,12 +375,3 @@ if __name__ == "__main__":
 
     print("\n更新后的配置:")
     print(f"MySQL端口: {session_config.get('MYSQL_PORT')}")
-
-    # 更新环境文件
-    try:
-        EnvFileManager.update({
-            "DB_POOL_MAX_SIZE": "200"
-        })
-        print("\n环境文件更新成功")
-    except Exception as e:
-        print(f"更新环境文件失败: {e}")

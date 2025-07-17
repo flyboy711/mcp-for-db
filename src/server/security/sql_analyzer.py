@@ -9,112 +9,87 @@ logger = logging.getLogger(__name__)
 
 
 class SQLRiskAnalyzer:
-    """SQL 风险分析器，提供全面的 SQL 风险评估和安全检查"""
+    """SQL风险分析器，评估SQL操作的安全风险"""
 
-    def __init__(self, config_manager: SessionConfigManager):
+    def __init__(self, session_config: SessionConfigManager):
         """
-        初始化 SQL 风险分析器
-        :param config_manager: 配置管理器实例
-        """
-        self.config = config_manager
-        self.sql_parser = SQLParser(config_manager)
+        初始化风险分析器
 
-        logger.info(f"SQL风险分析器初始化 - 环境: {self.config.get("ENV_TYPE")}")
-        logger.info(f"允许的风险等级: {[level for level in self.config.get("ALLOWED_RISK_LEVELS")]}")
-        logger.info(f"阻止的模式: {self.config.get("BLOCKED_PATTERNS")}")
+        Args:
+            session_config: 会话配置管理器实例
+        """
+        self.session_config = session_config
+        self.sql_parser = SQLParser(session_config)
+
+        logger.info("SQL风险分析器初始化完成")
 
     def analyze_risk(self, sql_query: str) -> Dict[str, Any]:
         """
-        全面分析 SQL 查询的风险级别和安全影响
+        分析SQL查询的风险
 
         Args:
-            sql_query: SQL 查询语句
+            sql_query: SQL查询语句
 
         Returns:
             dict: 包含风险分析结果的字典
         """
-        # 处理空 SQL
-        if not sql_query or not sql_query.strip():
-            return self._empty_analysis_result()
+        # 解析SQL
+        parsed_result = self.sql_parser.parse_query(sql_query)
 
-        try:
-            # 解析 SQL
-            parsed_result = self.sql_parser.parse_query(sql_query)
+        # 确定风险等级
+        risk_level = self._determine_risk_level(parsed_result)
 
-            # 安全分析
-            security_analysis = self.sql_parser.analyze_security(parsed_result)
+        # 检查是否是危险操作
+        is_dangerous = risk_level in {SQLRiskLevel.HIGH, SQLRiskLevel.CRITICAL}
 
-            # 风险分析
-            risk_level = self._calculate_risk_level(parsed_result, security_analysis)
+        # 检查是否允许执行
+        allowed_risk_levels = self.session_config.get('ALLOWED_RISK_LEVELS', set())
+        is_allowed = risk_level in allowed_risk_levels
 
-            # 影响评估
-            impact_analysis = self._estimate_impact(parsed_result)
+        return {
+            'risk_level': risk_level,
+            'is_dangerous': is_dangerous,
+            'is_allowed': is_allowed,
+            'operation': parsed_result['operation_type'],
+            'category': parsed_result['category'],
+            'tables': parsed_result['tables'],
+            'has_where': parsed_result['has_where'],
+            'has_limit': parsed_result['has_limit']
+        }
 
-            # 构建完整结果
-            return {
-                'operation': parsed_result['operation_type'],
-                'operation_type': parsed_result['category'],
-                'is_dangerous': security_analysis['is_allowed'] is False,
-                'affected_tables': parsed_result['tables'],
-                'estimated_impact': impact_analysis,
-                'risk_level': risk_level,
-                'is_allowed': security_analysis['is_allowed'],
-                'reasons': security_analysis['reasons'],
-                'multi_statement': parsed_result['multi_statement'],
-                'statement_count': parsed_result['statement_count'],
-                'security_analysis': security_analysis
-            }
-        except Exception as e:
-            logger.error(f"SQL风险分析失败: {str(e)}")
-            return self._fallback_analysis(sql_query)
-
-    def _calculate_risk_level(self, parsed_result: Dict[str, Any], security_analysis: Dict[str, Any]) -> SQLRiskLevel:
-        """
-        计算操作风险等级
-
-        规则：
-        1. 如果被安全分析标记为不允许，则使用最高风险等级
-        2. 根据操作类型和上下文确定风险等级
-        """
-        # 如果被安全分析标记为不允许，使用最高风险等级
-        if not security_analysis['is_allowed']:
-            return SQLRiskLevel.CRITICAL
-
-        operation = parsed_result['operation_type']
-        category = parsed_result['category']
-        has_where = parsed_result['has_where']
-        has_limit = parsed_result['has_limit']
-        is_multi = parsed_result['multi_statement']
+    def _determine_risk_level(self, parsed_result: Dict[str, Any]) -> SQLRiskLevel:
+        """根据解析结果确定风险等级"""
+        op_type = parsed_result['operation_type'].upper()
+        category = parsed_result['category'].upper()
 
         # DDL 操作
         if category == 'DDL':
-            if operation in {'DROP', 'TRUNCATE'}:
+            if op_type in {'DROP', 'TRUNCATE'}:
                 return SQLRiskLevel.CRITICAL
-            elif operation in {'ALTER', 'RENAME'}:
+            elif op_type in {'ALTER', 'RENAME'}:
                 return SQLRiskLevel.HIGH
             else:  # CREATE
                 return SQLRiskLevel.MEDIUM
 
         # DML 操作
-        if operation == 'DELETE':
-            return SQLRiskLevel.CRITICAL if not has_where else SQLRiskLevel.MEDIUM
-        elif operation == 'UPDATE':
-            return SQLRiskLevel.HIGH if not has_where else SQLRiskLevel.MEDIUM
-        elif operation == 'INSERT':
+        if op_type == 'DELETE':
+            if not parsed_result['has_where']:
+                return SQLRiskLevel.HIGH
             return SQLRiskLevel.MEDIUM
-        elif operation == 'SELECT':
-            # 没有 LIMIT 的大查询可能风险更高
-            return SQLRiskLevel.MEDIUM if not has_limit else SQLRiskLevel.LOW
-
-        # 元数据操作
-        if category == 'METADATA':
+        elif op_type == 'UPDATE':
+            if not parsed_result['has_where']:
+                return SQLRiskLevel.HIGH
+            return SQLRiskLevel.MEDIUM
+        elif op_type == 'INSERT':
+            return SQLRiskLevel.MEDIUM
+        elif op_type == 'SELECT':
             return SQLRiskLevel.LOW
 
-        # 多语句查询风险更高
-        if is_multi:
-            return SQLRiskLevel.HIGH
+        # 元数据操作
+        if op_type in {'SHOW', 'DESCRIBE', 'EXPLAIN'}:
+            return SQLRiskLevel.LOW
 
-        # 默认情况
+        # 其他操作默认为中等风险
         return SQLRiskLevel.MEDIUM
 
     def _estimate_impact(self, parsed_result: Dict[str, Any]) -> Dict[str, Any]:

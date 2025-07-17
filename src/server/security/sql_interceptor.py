@@ -1,5 +1,6 @@
+import re
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Set, List, Optional
 import asyncio
 from server.config import SessionConfigManager
 from server.security.sql_parser import SQLParser
@@ -132,7 +133,11 @@ class SQLInterceptor:
 
         # 检查是否包含阻止的模式
         if self._should_block_sql(sql_query):
-            raise SQLOperationException("SQL包含被阻止的模式")
+            blocked_patterns = self.session_config.get('BLOCKED_PATTERNS', [])
+            raise SQLOperationException(
+                "SQL包含被阻止的模式",
+                {'blocked_patterns': blocked_patterns}
+            )
 
     def _should_block_sql(self, sql_query: str) -> bool:
         """检查SQL是否包含被阻止的模式"""
@@ -140,8 +145,19 @@ class SQLInterceptor:
         if not blocked_patterns:
             return False
 
+        # 确保 blocked_patterns 是列表
+        if isinstance(blocked_patterns, str):
+            blocked_patterns = [p.strip().upper() for p in blocked_patterns.split(',') if p.strip()]
+
         sql_upper = sql_query.upper()
-        return any(pattern in sql_upper for pattern in blocked_patterns)
+
+        # 检查每个阻止模式
+        for pattern in blocked_patterns:
+            # 使用正则表达式确保模式是独立的单词
+            if re.search(rf'\b{re.escape(pattern)}\b', sql_upper):
+                return True
+
+        return False
 
     def _parse_sql(self, sql_query: str, result: Dict[str, Any]) -> Dict[str, Any]:
         """解析SQL并更新结果"""
@@ -216,12 +232,13 @@ class SQLInterceptor:
                 'security_analysis': risk_analysis
             })
 
-            # 检查是否是危险操作
+            # 检查是否是危险操作（仅记录警告）
             if risk_analysis['is_dangerous']:
-                raise SQLOperationException(
-                    f"检测到危险操作: {risk_analysis['operation']}",
-                    {'risk_details': risk_analysis}
+                logger.warning(
+                    f"检测到潜在危险操作: {risk_analysis['operation']}, "
+                    f"风险等级: {risk_analysis['risk_level'].name}"
                 )
+                result['warning'] = f"潜在危险操作: {risk_analysis['operation']}"
 
             return risk_analysis
         except Exception as e:
@@ -230,16 +247,16 @@ class SQLInterceptor:
     def _make_final_decision(self, result: Dict[str, Any], risk_analysis: Dict[str, Any]) -> None:
         """根据风险分析做出最终决策"""
         # 检查操作是否被允许
-        if not risk_analysis['is_allowed']:
+        if not risk_analysis.get('is_allowed', False):
             # 获取允许的风险等级
-            allowed_levels = self.session_config.get('ALLOWED_RISK_LEVELS', [])
-            allowed_names = [level.name for level in allowed_levels]
+            allowed_levels = self.session_config.get('ALLOWED_RISK_LEVELS', set())
+            allowed_names = [level.name for level in allowed_levels] if allowed_levels else []
 
             raise SQLOperationException(
-                f"当前操作风险等级({risk_analysis['risk_level'].name})不被允许执行，"
+                f"当前操作风险等级({risk_analysis.get('risk_level', 'UNKNOWN')})不被允许执行，"
                 f"允许的风险等级: {', '.join(allowed_names)}",
                 {
-                    'risk_level': risk_analysis['risk_level'].name,
+                    'risk_level': risk_analysis.get('risk_level', 'UNKNOWN'),
                     'allowed_risk_levels': allowed_names
                 }
             )
@@ -369,16 +386,16 @@ async def test_sql_interceptor():
 
     # 测试用例
     test_cases = [
-        ("SELECT * FROM t_users", "简单SELECT查询"),
-        ("DROP TABLE t_users", "危险DROP操作"),
-        ("UPDATE t_users SET age = age * 1.1", "无WHERE条件的UPDATE"),
-        ("SELECT * FROM other_db.orders", "跨数据库查询"),
-        ("SHOW DATABASES", "元数据查询"),
-        ("", "空查询"),
-        ("A" * 6000, "超长SQL查询")
+        ("SELECT * FROM t_users", "简单SELECT查询", True),
+        ("DROP TABLE t_users", "危险DROP操作", False),
+        ("UPDATE t_users SET age = age * 1.1", "无WHERE条件的UPDATE", True),
+        ("SELECT * FROM other_db.orders", "跨数据库查询", False),
+        ("SHOW DATABASES", "元数据查询", True),
+        ("", "空查询", False),
+        ("A" * 6000, "超长SQL查询", False)
     ]
 
-    for sql, description in test_cases:
+    for sql, description, expected in test_cases:
         logger.info(f"\n测试用例: {description}")
         logger.info(f"SQL: {sql[:100]}{'...' if len(sql) > 100 else ''}")
 
@@ -386,8 +403,12 @@ async def test_sql_interceptor():
             result = await interceptor.check_operation(sql)
             if result['is_allowed']:
                 logger.info("SQL操作允许执行")
+                if not expected:
+                    logger.error("错误: 预期被拒绝的操作被允许了")
             else:
                 logger.warning(f"SQL操作被拒绝: {result['violations']}")
+                if expected:
+                    logger.error("错误: 预期允许的操作被拒绝了")
         except Exception as e:
             logger.error(f"测试失败: {str(e)}")
 

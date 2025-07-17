@@ -1,6 +1,6 @@
 import sqlparse
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Set
 from server.config import SessionConfigManager, SQLRiskLevel, DatabaseAccessLevel
 
 logger = logging.getLogger(__name__)
