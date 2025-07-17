@@ -1,11 +1,11 @@
 import logging
 from typing import Dict, Any, Optional
 import asyncio
-
-from server.config import AppConfigManager, SQLRiskLevel
+from server.config import SessionConfigManager
 from server.security.sql_parser import SQLParser
 from server.security.db_scope_check import DatabaseScopeChecker, DatabaseScopeViolation
 from server.security.sql_analyzer import SQLRiskAnalyzer
+from server.security.sql_analyzer import SQLRiskLevel
 
 logger = logging.getLogger(__name__)
 
@@ -27,23 +27,27 @@ class SQLOperationException(SecurityException):
 class SQLInterceptor:
     """增强的SQL操作拦截器，提供全面的SQL安全检查和拦截功能"""
 
-    def __init__(self, config_manager: AppConfigManager):
+    def __init__(self, session_config: SessionConfigManager):
         """
         初始化SQL拦截器
 
         Args:
-            config_manager: 配置管理器实例
+            session_config: 会话配置管理器实例
         """
-        self.config = config_manager
-        self.sql_parser = SQLParser(config_manager)
-        self.risk_analyzer = SQLRiskAnalyzer(config_manager)
+        self.session_config = session_config
+
+        # 初始化SQL解析器
+        self.sql_parser = SQLParser(session_config)
+
+        # 初始化风险分析器
+        self.risk_analyzer = SQLRiskAnalyzer(session_config)
 
         # 初始化数据库范围检查器
         self.database_checker = None
-        if config_manager.ENABLE_DATABASE_ISOLATION and config_manager.MYSQL_DATABASE:
-            self.database_checker = DatabaseScopeChecker(config_manager)
-            logger.info(f"数据库隔离已启用: 允许数据库={config_manager.MYSQL_DATABASE}, "
-                        f"访问级别={config_manager.DATABASE_ACCESS_LEVEL.value}")
+        if session_config.get('ENABLE_DATABASE_ISOLATION', False):
+            self.database_checker = DatabaseScopeChecker(session_config)
+            logger.info(f"数据库隔离已启用: 允许数据库={session_config.get('MYSQL_DATABASE')}, "
+                        f"访问级别={session_config.get('DATABASE_ACCESS_LEVEL', 'permissive')}")
 
         logger.info("SQL拦截器初始化完成")
 
@@ -119,7 +123,7 @@ class SQLInterceptor:
             raise SQLOperationException("SQL语句不能为空")
 
         # 检查SQL长度
-        max_length = self.config.MAX_SQL_LENGTH
+        max_length = self.session_config.get('MAX_SQL_LENGTH', 1000)
         if len(sql_query) > max_length:
             raise SQLOperationException(
                 f"SQL语句长度({len(sql_query)})超出限制({max_length})",
@@ -127,8 +131,17 @@ class SQLInterceptor:
             )
 
         # 检查是否包含阻止的模式
-        if self.config.should_block_sql(sql_query):
+        if self._should_block_sql(sql_query):
             raise SQLOperationException("SQL包含被阻止的模式")
+
+    def _should_block_sql(self, sql_query: str) -> bool:
+        """检查SQL是否包含被阻止的模式"""
+        blocked_patterns = self.session_config.get('BLOCKED_PATTERNS', [])
+        if not blocked_patterns:
+            return False
+
+        sql_upper = sql_query.upper()
+        return any(pattern in sql_upper for pattern in blocked_patterns)
 
     def _parse_sql(self, sql_query: str, result: Dict[str, Any]) -> Dict[str, Any]:
         """解析SQL并更新结果"""
@@ -151,9 +164,9 @@ class SQLInterceptor:
 
             # 检查操作类型是否支持
             supported_operations = (
-                    self.config.DDL_OPERATIONS |
-                    self.config.DML_OPERATIONS |
-                    self.config.METADATA_OPERATIONS
+                    self.sql_parser.ddl_operations |
+                    self.sql_parser.dml_operations |
+                    self.sql_parser.metadata_operations
             )
 
             if parsed_result['operation_type'] not in supported_operations:
@@ -218,13 +231,16 @@ class SQLInterceptor:
         """根据风险分析做出最终决策"""
         # 检查操作是否被允许
         if not risk_analysis['is_allowed']:
-            allowed_levels = [level.name for level in self.config.ALLOWED_RISK_LEVELS]
+            # 获取允许的风险等级
+            allowed_levels = self.session_config.get('ALLOWED_RISK_LEVELS', [])
+            allowed_names = [level.name for level in allowed_levels]
+
             raise SQLOperationException(
                 f"当前操作风险等级({risk_analysis['risk_level'].name})不被允许执行，"
-                f"允许的风险等级: {allowed_levels}",
+                f"允许的风险等级: {', '.join(allowed_names)}",
                 {
                     'risk_level': risk_analysis['risk_level'].name,
-                    'allowed_risk_levels': allowed_levels
+                    'allowed_risk_levels': allowed_names
                 }
             )
 
@@ -297,12 +313,16 @@ class SQLInterceptor:
 
     def _get_basic_check_report(self, sql_query: str) -> Dict[str, Any]:
         """获取基本检查报告"""
+        max_length = self.session_config.get('MAX_SQL_LENGTH', 1000)
+        blocked_patterns = self.session_config.get('BLOCKED_PATTERNS', [])
+
         return {
             'is_empty': not bool(sql_query.strip()),
             'length': len(sql_query),
-            'max_length': self.config.MAX_SQL_LENGTH,
-            'is_over_length': len(sql_query) > self.config.MAX_SQL_LENGTH,
-            'contains_blocked_patterns': self.config.should_block_sql(sql_query)
+            'max_length': max_length,
+            'is_over_length': len(sql_query) > max_length,
+            'contains_blocked_patterns': self._should_block_sql(sql_query),
+            'blocked_patterns': blocked_patterns
         }
 
     def _is_operation_allowed(self, report: Dict[str, Any]) -> bool:
@@ -334,21 +354,28 @@ async def test_sql_interceptor():
     """测试SQL拦截器功能"""
     logger.info("=== 开始SQL拦截器测试 ===")
 
-    # 初始化配置管理器
-    config_manager = AppConfigManager()
+    # 创建会话配置
+    session_config = SessionConfigManager({
+        "ENABLE_DATABASE_ISOLATION": "true",
+        "MYSQL_DATABASE": "test_db",
+        "DATABASE_ACCESS_LEVEL": "restricted",
+        "MAX_SQL_LENGTH": "5000",
+        "BLOCKED_PATTERNS": "DROP TABLE,TRUNCATE TABLE",
+        "ALLOWED_RISK_LEVELS": "LOW,MEDIUM"
+    })
 
     # 创建SQL拦截器
-    interceptor = SQLInterceptor(config_manager)
+    interceptor = SQLInterceptor(session_config)
 
     # 测试用例
     test_cases = [
         ("SELECT * FROM t_users", "简单SELECT查询"),
-        ("DROP TABLE _users", "危险DROP操作"),
+        ("DROP TABLE t_users", "危险DROP操作"),
         ("UPDATE t_users SET age = age * 1.1", "无WHERE条件的UPDATE"),
-        ("SELECT * FROM tpch_tiny.orders", "跨数据库查询"),
+        ("SELECT * FROM other_db.orders", "跨数据库查询"),
         ("SHOW DATABASES", "元数据查询"),
         ("", "空查询"),
-        ("A" * (config_manager.MAX_SQL_LENGTH + 100), "超长SQL查询")
+        ("A" * 6000, "超长SQL查询")
     ]
 
     for sql, description in test_cases:

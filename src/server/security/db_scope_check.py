@@ -1,7 +1,7 @@
 import re
 import logging
 from typing import Set, List, Tuple, Dict, Any
-from server.config import AppConfigManager, DatabaseAccessLevel
+from server.config import SessionConfigManager, DatabaseAccessLevel
 
 logger = logging.getLogger(__name__)
 
@@ -65,17 +65,25 @@ class DatabaseScopeChecker:
         ]
     }
 
-    def __init__(self, config_manager: AppConfigManager):
+    def __init__(self, session_config: SessionConfigManager):
         """
         初始化数据库范围检查器
 
         Args:
-            config_manager: 配置管理器实例
+            session_config: 会话配置管理器实例
         """
-        self.config = config_manager
-        self.allowed_database = config_manager.MYSQL_DATABASE
-        self.access_level = config_manager.DATABASE_ACCESS_LEVEL
-        self.is_enabled = config_manager.ENABLE_DATABASE_ISOLATION
+        self.session_config = session_config
+
+        # 获取配置项（不加前缀）
+        self.is_enabled = session_config.get('ENABLE_DATABASE_ISOLATION', False)
+        self.allowed_database = session_config.get('MYSQL_DATABASE', '')
+
+        # 获取数据库访问级别（字符串转换为枚举）
+        access_level_str = session_config.get('DATABASE_ACCESS_LEVEL', 'permissive').lower()
+        try:
+            self.access_level = DatabaseAccessLevel(access_level_str)
+        except ValueError:
+            self.access_level = DatabaseAccessLevel.PERMISSIVE
 
         logger.info(f"数据库范围检查器初始化: 允许数据库={self.allowed_database}, "
                     f"访问级别={self.access_level.value}, 启用={self.is_enabled}")

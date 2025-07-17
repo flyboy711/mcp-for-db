@@ -1,6 +1,7 @@
 # MCP-For-DB
 
 官方仓库地址：https://github.com/wenb1n-dev/mysql_mcp_server_pro.
+
 本项目在官方仓库基础上做进一步开发，进一步增强 MCP for Mysql & DB 的功能。
 
 ## 介绍
@@ -35,11 +36,26 @@
 
 ## 工具列表
 
-部分工具还在测试中。。。
+| 工具                        | 功能说明                                                           |
+|---------------------------|----------------------------------------------------------------|
+| sql_executor              | 执行单条SQL语句，但集成了SQL安全分析器、范围检查和权限控制，且只允许使用安全的参数化查询防止SQL注入攻击。      |
+| get_table_desc            | 根据表名搜索数据库中对应的表字段                                               |
+| get_table_index           | 根据表名搜索数据库中对应的表索引                                               |
+| get_table_name            | 根据表中文名或表描述搜索数据库中对应的表名                                          |
+| get_database_info         | 获取数据库基本信息                                                      |
+| get_database_tables       | 获取数据库所有表和对应的表注释                                                |
+| analyze_table_stats       | 分析表统计信息和列统计信息                                                  |
+| check_table_constraints   | 检查表约束信息                                                        |
+| get_table_lock            | 获取当前 MySQL 服务器行级锁、表级锁情况                                        |
+| mysql_show_columns        | 获取表的列信息                                                        |
+| mysql_show_create_table   | 获取表的创建语句                                                       |
+| get_db_health_running     | 获取当前 MySQL 的健康状态                                               |
+| get_db_health_index_usage | 获取当前连接的MySQL库的索引使用情况,包含冗余索引情况、性能较差的索引情况、未使用索引且查询时间大于30秒top10情况 |
+| get_process_list          | 获取当前进程列表                                                       |
+| switch_database           | 动态切换数据库连接配置                                                    |
+|                           |                                                                |
 
-![3113b098.png](assets/3113b098.png)
-![3113b099.png](assets/3113b099.png)
-![3113b080.png](assets/3113b080.png)
+部分工具还在测试中。。。
 
 ## 使用说明
 
@@ -170,35 +186,31 @@ ok，现在看起来就对多了，开始执行🔧运行指令并返回结果�
 案例二：分析Videx中的联表查询。
 
 ```sql
-SELECT
-    n_name,
-    SUM(l_extendedprice * (1 - l_discount)) AS revenue
-FROM
-    customer,
-    orders,
-    lineitem,
-    supplier,
-    nation,
-    region
-WHERE
-    c_custkey = o_custkey
-    AND l_orderkey = o_orderkey
-    AND l_suppkey = s_suppkey
-    AND c_nationkey = s_nationkey
-    AND s_nationkey = n_nationkey
-    AND n_regionkey = r_regionkey
-    AND r_name = 'ASIA'
-    AND o_orderdate >= '1994-01-01'
-    AND o_orderdate < '1995-01-01'
-GROUP BY
-    n_name
-ORDER BY
-    revenue DESC;
+SELECT n_name,
+       SUM(l_extendedprice * (1 - l_discount)) AS revenue
+FROM customer,
+     orders,
+     lineitem,
+     supplier,
+     nation,
+     region
+WHERE c_custkey = o_custkey
+  AND l_orderkey = o_orderkey
+  AND l_suppkey = s_suppkey
+  AND c_nationkey = s_nationkey
+  AND s_nationkey = n_nationkey
+  AND n_regionkey = r_regionkey
+  AND r_name = 'ASIA'
+  AND o_orderdate >= '1994-01-01'
+  AND o_orderdate < '1995-01-01'
+GROUP BY n_name
+ORDER BY revenue DESC;
 
 根据当前的索引情况，查看执行计划提出优化意见，以markdown格式输出，sql相关的表索引情况、执行情况，优化意见
 ```
 
 模型执行效果：
+
 ![](assets/c13af2ed.png)
 ![](assets/01bb3934.png)
 ![](assets/7897fac4.png)

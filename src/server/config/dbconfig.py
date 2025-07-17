@@ -1,6 +1,7 @@
 import os
-from typing import List, Set, Any
-from enum import IntEnum, Enum
+import hashlib
+from typing import List, Set, Dict, Any, Optional
+from enum import Enum, IntEnum
 from dotenv import load_dotenv
 
 
@@ -16,7 +17,6 @@ def strtobool(value: Any) -> bool:
     raise ValueError(f"无法解析的布尔值: {value}")
 
 
-# 枚举定义
 class EnvironmentType(Enum):
     """环境类型"""
     DEVELOPMENT = 'development'
@@ -38,7 +38,7 @@ class DatabaseAccessLevel(Enum):
     PERMISSIVE = 'permissive'
 
 
-def _get_env_type() -> EnvironmentType:
+def get_env_type() -> EnvironmentType:
     """获取环境类型并转换"""
     env_str = os.getenv('ENV_TYPE', 'development').lower()
     try:
@@ -47,194 +47,225 @@ def _get_env_type() -> EnvironmentType:
         return EnvironmentType.DEVELOPMENT
 
 
-def _get_blocked_patterns() -> List[str]:
+def get_blocked_patterns() -> List[str]:
     """获取阻止的SQL模式列表"""
     patterns_str = os.getenv('BLOCKED_PATTERNS', '')
     return [p.strip().upper() for p in patterns_str.split(',') if p.strip()]
 
 
-class AppConfigManager:
-    """应用配置的统一管理器"""
-
-    # SQL操作集合
-    DDL_OPERATIONS = {'CREATE', 'ALTER', 'DROP', 'TRUNCATE', 'RENAME'}
-    DML_OPERATIONS = {'SELECT', 'INSERT', 'UPDATE', 'DELETE', 'MERGE'}
-    METADATA_OPERATIONS = {'SHOW', 'DESC', 'DESCRIBE', 'EXPLAIN', 'HELP', 'ANALYZE', 'CHECK', 'CHECKSUM', 'OPTIMIZE'}
-
-    # 角色权限
-    ROLE_PERMISSIONS = {
-        "readonly": ["SELECT", "SHOW", "DESCRIBE", "EXPLAIN"],
-        "admin": ["SELECT", "INSERT", "UPDATE", "DELETE", "CREATE", "ALTER", "DROP", "TRUNCATE"]
-    }
-
-    def __init__(self):
-        load_dotenv()
-        self._load_config()
-
-    def refresh_config(self) -> None:
-        """强制重新加载配置"""
-        self._load_config()
-
-    def _load_config(self) -> None:
-        """加载所有配置项"""
-        # 服务器配置
-        self.HOST = os.getenv('HOST', '127.0.0.1')
-        self.PORT = int(os.getenv('PORT', '3000'))
-        self.ENV_TYPE = _get_env_type()
-        self.MCP_LOGIN_URL = os.getenv('MCP_LOGIN_URL', 'http://localhost:3000/login')
-        self.OAUTH_USER_NAME = os.getenv('OAUTH_USER_NAME', 'admin')
-        self.OAUTH_USER_PASSWORD = os.getenv('OAUTH_USER_PASSWORD', 'admin')
-
-        # 数据库配置
-        self.MYSQL_HOST = os.getenv('MYSQL_HOST', 'localhost')
-        self.MYSQL_PORT = int(os.getenv('MYSQL_PORT', '3306'))
-        self.MYSQL_USER = os.getenv('MYSQL_USER')
-        self.MYSQL_PASSWORD = os.getenv('MYSQL_PASSWORD')
-        self.MYSQL_DATABASE = os.getenv('MYSQL_DATABASE')
-        self.MYSQL_ROLE = os.getenv('MYSQL_ROLE', 'readonly')
-        self.DB_AUTH_PLUGIN = os.getenv('DB_AUTH_PLUGIN', 'mysql_native_password')
-        self.DB_CONNECTION_TIMEOUT = int(os.getenv('DB_CONNECTION_TIMEOUT', '5'))
-
-        # 连接池配置
-        self.DB_POOL_ENABLED = strtobool(os.getenv('DB_POOL_ENABLED', 'false'))
-        self.DB_POOL_MIN_SIZE = int(os.getenv('DB_POOL_MIN_SIZE', '5'))
-        self.DB_POOL_MAX_SIZE = int(os.getenv('DB_POOL_MAX_SIZE', '20'))
-        self.DB_POOL_RECYCLE = int(os.getenv('DB_POOL_RECYCLE', '300'))
-        self.DB_POOL_MAX_LIFETIME = int(os.getenv('DB_POOL_MAX_LIFETIME', '0'))
-        self.DB_POOL_ACQUIRE_TIMEOUT = float(os.getenv('DB_POOL_ACQUIRE_TIMEOUT', '10.0'))
-
-        # 安全配置
-        self.ALLOWED_RISK_LEVELS = self._get_allowed_risk_levels()
-        self.ALLOW_SENSITIVE_INFO = strtobool(os.getenv('ALLOW_SENSITIVE_INFO', 'false'))
-        self.MAX_SQL_LENGTH = int(os.getenv('MAX_SQL_LENGTH', '1000'))
-        self.BLOCKED_PATTERNS = _get_blocked_patterns()
-        self.ENABLE_QUERY_CHECK = strtobool(os.getenv('ENABLE_QUERY_CHECK', 'true'))
-        self.ENABLE_DATABASE_ISOLATION = self._get_db_isolation_setting()
-        self.DATABASE_ACCESS_LEVEL = self._get_db_access_level()
-
-        # 日志配置
-        self.LOG_LEVEL = os.getenv('LOG_LEVEL', 'DEBUG')
-
-        # 验证必要配置
-        if not all([self.MYSQL_USER, self.MYSQL_PASSWORD, self.MYSQL_DATABASE]):
-            raise ValueError("缺少必要的数据库配置信息")
-
-    def _get_allowed_risk_levels(self) -> Set[SQLRiskLevel]:
-        """获取允许的风险等级"""
-        allowed_levels: Set[SQLRiskLevel] = set()
-        levels_str = os.getenv('ALLOWED_RISK_LEVELS', '')
-
-        # 生产环境默认只允许低风险操作
-        if self.ENV_TYPE == EnvironmentType.PRODUCTION and not levels_str:
-            return {SQLRiskLevel.LOW}
-
-        # 解析配置的风险等级
-        for level_str in levels_str.upper().split(','):
-            level_str = level_str.strip()
-            try:
-                # 明确添加枚举值
-                level_value = getattr(SQLRiskLevel, level_str)
-                allowed_levels.add(level_value)
-            except AttributeError:
-                continue  # 跳过无效的风险等级
-
+def parse_risk_levels(levels_str: str) -> Set[SQLRiskLevel]:
+    """解析风险等级字符串"""
+    allowed_levels: Set[SQLRiskLevel] = set()
+    if not levels_str:
         return allowed_levels
 
-    def _get_db_isolation_setting(self) -> bool:
-        """获取数据库隔离设置"""
-        # 生产环境强制启用数据库隔离
-        if self.ENV_TYPE == EnvironmentType.PRODUCTION:
-            return True
-
-        return strtobool(os.getenv('ENABLE_DATABASE_ISOLATION', 'false'))
-
-    def _get_db_access_level(self) -> DatabaseAccessLevel:
-        """获取数据库访问级别"""
-        # 生产环境默认使用限制模式
-        if self.ENV_TYPE == EnvironmentType.PRODUCTION and not os.getenv('DATABASE_ACCESS_LEVEL'):
-            return DatabaseAccessLevel.RESTRICTED
-
-        level_str = os.getenv('DATABASE_ACCESS_LEVEL', 'permissive').lower()
+    for level_str in levels_str.upper().split(','):
+        level_str = level_str.strip()
         try:
-            return DatabaseAccessLevel(level_str)
+            # 尝试从SQLRiskLevel枚举中获取值
+            level_value = getattr(SQLRiskLevel, level_str)
+            allowed_levels.add(level_value)
+        except AttributeError:
+            continue  # 跳过无效的风险等级
+    return allowed_levels
+
+
+def _get_db_isolation_setting() -> bool:
+    """获取数据库隔离设置"""
+    # 生产环境强制启用数据库隔离
+    if get_env_type() == EnvironmentType.PRODUCTION:
+        return True
+    return strtobool(os.getenv('ENABLE_DATABASE_ISOLATION', 'false'))
+
+
+def _get_db_access_level() -> DatabaseAccessLevel:
+    """获取数据库访问级别"""
+    # 生产环境默认使用限制模式
+    if get_env_type() == EnvironmentType.PRODUCTION and not os.getenv('DATABASE_ACCESS_LEVEL'):
+        return DatabaseAccessLevel.RESTRICTED
+
+    level_str = os.getenv('DATABASE_ACCESS_LEVEL', 'permissive').lower()
+    try:
+        return DatabaseAccessLevel(level_str)
+    except ValueError:
+        return DatabaseAccessLevel.PERMISSIVE
+
+
+class SessionConfigManager:
+    """会话级配置管理器，支持动态更新配置"""
+
+    def __init__(self, initial_config: Optional[Dict[str, Any]] = None):
+        self.config: Dict[str, Any] = {}
+        self._config_hash = ''
+
+        if initial_config is not None:
+            # 进行类型转换
+            self.config = self._normalize_external_config(initial_config).copy()
+        else:
+            self._load_from_env()
+
+        self._update_hash()
+
+    def _normalize_external_config(self, raw_config: Dict[str, Any]) -> Dict[str, Any]:
+        """将外部传入的配置进行类型转换和标准化处理"""
+        normalized = {}
+
+        # 转换环境类型
+        env_str = raw_config.get('ENV_TYPE', 'development').lower()
+        normalized['ENV_TYPE'] = EnvironmentType(
+            env_str if env_str in ('development', 'production') else 'development').value
+
+        # 转换风险等级
+        risk_str = raw_config.get('ALLOWED_RISK_LEVELS', '')
+        normalized['ALLOWED_RISK_LEVELS'] = ','.join(
+            level.name for level in parse_risk_levels(risk_str)
+        )
+
+        # 处理阻止模式
+        patterns = raw_config.get('BLOCKED_PATTERNS', '')
+        normalized['BLOCKED_PATTERNS'] = ','.join(
+            p.strip().upper() for p in patterns.split(',') if p.strip()
+        )
+
+        # 转换数据库访问级别
+        if 'DATABASE_ACCESS_LEVEL' in raw_config:
+            level_str = str(raw_config['DATABASE_ACCESS_LEVEL']).lower()
+            try:
+                normalized['DATABASE_ACCESS_LEVEL'] = DatabaseAccessLevel(level_str).value
+            except ValueError:
+                # 如果传入值无效，使用默认
+                normalized['DATABASE_ACCESS_LEVEL'] = DatabaseAccessLevel.PERMISSIVE.value
+
+        # 处理布尔值转换
+        for bool_key in [
+            'DB_POOL_ENABLED',
+            'ALLOW_SENSITIVE_INFO',
+            'ENABLE_QUERY_CHECK',
+            'ENABLE_DATABASE_ISOLATION'
+        ]:
+            if bool_key in raw_config:
+                normalized[bool_key] = strtobool(raw_config[bool_key])
+
+        # 处理数值类型
+        for int_key in [
+            'MYSQL_PORT', 'DB_CONNECTION_TIMEOUT',
+            'DB_POOL_MIN_SIZE', 'DB_POOL_MAX_SIZE',
+            'DB_POOL_RECYCLE', 'DB_POOL_MAX_LIFETIME',
+            'MAX_SQL_LENGTH'
+        ]:
+            if int_key in raw_config:
+                try:
+                    normalized[int_key] = int(raw_config[int_key])
+                except (TypeError, ValueError):
+                    # 缺失就没配置
+                    pass
+
+        # 处理浮点数
+        if 'DB_POOL_ACQUIRE_TIMEOUT' in raw_config:
+            try:
+                normalized['DB_POOL_ACQUIRE_TIMEOUT'] = float(raw_config['DB_POOL_ACQUIRE_TIMEOUT'])
+            except (TypeError, ValueError):
+                pass
+
+        # 直接复制其余不需要特殊处理的配置项
+        for key in raw_config:
+            if key not in normalized:
+                normalized[key] = raw_config[key]
+
+        # 确保生产环境的强制规则
+        if normalized.get('ENV_TYPE') == 'production':
+            normalized['ENABLE_DATABASE_ISOLATION'] = True
+            if 'DATABASE_ACCESS_LEVEL' not in normalized:
+                normalized['DATABASE_ACCESS_LEVEL'] = DatabaseAccessLevel.RESTRICTED.value
+
+        return normalized
+
+    def _update_hash(self) -> None:
+        self._config_hash = hashlib.md5(str(self.config).encode('utf-8')).hexdigest()
+
+    def update_from_env(self) -> None:
+        self._load_from_env()
+
+    def _parse_int_env(self, key: str, default: int) -> int:
+        value = os.getenv(key)
+        if value is None:
+            return default
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+
+    def _parse_float_env(self, key: str, default: float) -> float:
+        value = os.getenv(key)
+        if value is None:
+            return default
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
+    def _parse_bool_env(self, key: str, default: bool) -> bool:
+        value = os.getenv(key)
+        if value is None:
+            return default
+        try:
+            return strtobool(value)
         except ValueError:
-            return DatabaseAccessLevel.PERMISSIVE
+            return default
 
-    def get_database_config(self) -> dict:
-        """获取数据库连接配置"""
-        self._load_config()
-        return {
-            'host': self.MYSQL_HOST,
-            'port': self.MYSQL_PORT,
-            'user': self.MYSQL_USER,
-            'password': self.MYSQL_PASSWORD,
-            'database': self.MYSQL_DATABASE,
-            'role': self.MYSQL_ROLE,
-            'auth_plugin': self.DB_AUTH_PLUGIN,
-            'connection_timeout': self.DB_CONNECTION_TIMEOUT
-        }
+    def _load_from_env(self) -> None:
+        # 服务器配置
+        self.config['HOST'] = os.getenv('HOST', '127.0.0.1')
+        self.config['PORT'] = self._parse_int_env('PORT', 3000)
+        self.config['ENV_TYPE'] = get_env_type().value
+        self.config['MCP_LOGIN_URL'] = os.getenv('MCP_LOGIN_URL', 'http://localhost:3000/login')
+        self.config['OAUTH_USER_NAME'] = os.getenv('OAUTH_USER_NAME')
+        self.config['OAUTH_USER_PASSWORD'] = os.getenv('OAUTH_USER_PASSWORD')
 
-    def get_pool_config(self) -> dict:
-        """获取连接池配置"""
-        return {
-            'enabled': self.DB_POOL_ENABLED,
-            'min_size': self.DB_POOL_MIN_SIZE,
-            'max_size': self.DB_POOL_MAX_SIZE,
-            'recycle': self.DB_POOL_RECYCLE,
-            'max_lifetime': self.DB_POOL_MAX_LIFETIME,
-            'acquire_timeout': self.DB_POOL_ACQUIRE_TIMEOUT
-        }
+        # 数据库配置
+        self.config['MYSQL_HOST'] = os.getenv('MYSQL_HOST', 'localhost')
+        self.config['MYSQL_PORT'] = self._parse_int_env('MYSQL_PORT', 3306)
+        self.config['MYSQL_USER'] = os.getenv('MYSQL_USER')
+        self.config['MYSQL_PASSWORD'] = os.getenv('MYSQL_PASSWORD')
+        self.config['MYSQL_DATABASE'] = os.getenv('MYSQL_DATABASE')
+        self.config['MYSQL_ROLE'] = os.getenv('MYSQL_ROLE', 'readonly')
+        self.config['DB_AUTH_PLUGIN'] = os.getenv('DB_AUTH_PLUGIN', 'mysql_native_password')
+        self.config['DB_CONNECTION_TIMEOUT'] = self._parse_int_env('DB_CONNECTION_TIMEOUT', 5)
 
-    def get_security_config(self) -> dict:
-        """获取安全配置"""
-        return {
-            'env_type': self.ENV_TYPE,
-            'allowed_risk_levels': self.ALLOWED_RISK_LEVELS,
-            'allow_sensitive_info': self.ALLOW_SENSITIVE_INFO,
-            'max_sql_length': self.MAX_SQL_LENGTH,
-            'blocked_patterns': self.BLOCKED_PATTERNS,
-            'enable_query_check': self.ENABLE_QUERY_CHECK,
-            'enable_database_isolation': self.ENABLE_DATABASE_ISOLATION,
-            'database_access_level': self.DATABASE_ACCESS_LEVEL,
-            'log_level': self.LOG_LEVEL
-        }
+        # 连接池配置
+        self.config['DB_POOL_ENABLED'] = self._parse_bool_env('DB_POOL_ENABLED', False)
+        self.config['DB_POOL_MIN_SIZE'] = self._parse_int_env('DB_POOL_MIN_SIZE', 5)
+        self.config['DB_POOL_MAX_SIZE'] = self._parse_int_env('DB_POOL_MAX_SIZE', 20)
+        self.config['DB_POOL_RECYCLE'] = self._parse_int_env('DB_POOL_RECYCLE', 300)
+        self.config['DB_POOL_MAX_LIFETIME'] = self._parse_int_env('DB_POOL_MAX_LIFETIME', 0)
+        self.config['DB_POOL_ACQUIRE_TIMEOUT'] = self._parse_float_env('DB_POOL_ACQUIRE_TIMEOUT', 10.0)
 
-    def get_server_config(self) -> dict:
-        """获取服务器配置"""
-        return {
-            'host': self.HOST,
-            'port': self.PORT,
-            'login_url': self.MCP_LOGIN_URL,
-            'oauth_user': self.OAUTH_USER_NAME,
-            'oauth_password': self.OAUTH_USER_PASSWORD
-        }
+        # 安全配置
+        self.config['ALLOWED_RISK_LEVELS'] = ','.join(
+            l.name for l in parse_risk_levels(os.getenv('ALLOWED_RISK_LEVELS', ''))
+        )
+        self.config['ALLOW_SENSITIVE_INFO'] = self._parse_bool_env('ALLOW_SENSITIVE_INFO', False)
+        self.config['MAX_SQL_LENGTH'] = self._parse_int_env('MAX_SQL_LENGTH', 1000)
+        self.config['BLOCKED_PATTERNS'] = ','.join(get_blocked_patterns())
+        self.config['ENABLE_QUERY_CHECK'] = self._parse_bool_env('ENABLE_QUERY_CHECK', True)
+        self.config['ENABLE_DATABASE_ISOLATION'] = _get_db_isolation_setting()
+        self.config['DATABASE_ACCESS_LEVEL'] = _get_db_access_level().value
 
-    # 权限检查方法
-    def get_role_permissions(self, role: str = None) -> list:
-        """获取指定角色的权限列表"""
-        target_role = role or self.MYSQL_ROLE
-        return self.ROLE_PERMISSIONS.get(target_role, self.ROLE_PERMISSIONS["readonly"])
+        # 日志配置
+        self.config['LOG_LEVEL'] = os.getenv('LOG_LEVEL', 'DEBUG').upper()
 
-    def validate_operation(self, operation: str, role: str = None) -> bool:
-        """验证操作是否在角色权限内"""
-        return operation in self.get_role_permissions(role)
+    def update(self, new_cfg: Dict[str, Any]) -> None:
+        self.config.update(new_cfg)
+        self._update_hash()
 
-    def is_operation_allowed(self, risk_level: SQLRiskLevel) -> bool:
-        """检查指定风险等级的操作是否被允许"""
-        return risk_level in self.ALLOWED_RISK_LEVELS
+    def get(self, key: str, default: Any = None) -> Any:
+        return self.config.get(key, default)
 
-    # 其他辅助方法
-    def is_production(self) -> bool:
-        """检查是否为生产环境"""
-        return self.ENV_TYPE == EnvironmentType.PRODUCTION
+    def get_all(self) -> Dict[str, Any]:
+        return self.config.copy()
 
-    def should_block_sql(self, sql: str) -> bool:
-        """检查SQL是否包含被阻止的模式"""
-        if not self.BLOCKED_PATTERNS:
-            return False
-
-        sql_upper = sql.upper()
-        return any(pattern in sql_upper for pattern in self.BLOCKED_PATTERNS)
+    def _compute_config_hash(self) -> str:
+        return hashlib.md5(str(self.config).encode('utf-8')).hexdigest()
 
 
 class EnvFileManager:
@@ -332,57 +363,65 @@ class EnvFileManager:
             os.environ[key] = str(value)
 
 
+# 示例使用
 if __name__ == "__main__":
-    config = AppConfigManager()
+    # 创建默认会话配置
+    load_dotenv()
+    session_config = SessionConfigManager()
 
-    print("服务器配置:", config.get_server_config())
-    print("\n数据库配置:", config.get_database_config())
-    print("\n连接池配置:", config.get_pool_config())
-    print("\n安全配置:", config.get_security_config())
+    # 使用新的get方法获取配置值
+    print("数据库配置:")
+    print(f"MySQL主机: {session_config.get('MYSQL_HOST')}")
+    print(f"MySQL端口: {session_config.get('MYSQL_PORT')}")
+    print(f"MySQL用户: {session_config.get('MYSQL_USER')}")
+    print(f"MySQL密码: {session_config.get('MYSQL_PASSWORD')}")
+    print(f"MySQL数据库: {session_config.get('MYSQL_DATABASE')}")
+    print(f"MySQL角色: {session_config.get('MYSQL_ROLE')}")
+    print(f"连接超时: {session_config.get('DB_CONNECTION_TIMEOUT')}秒")
+    print(f"认证插件: {session_config.get('DB_AUTH_PLUGIN')}")
 
-    # 检查权限
-    print("\n权限检查:")
-    print("SELECT 操作允许:", config.validate_operation("SELECT"))
-    print("DELETE 操作允许:", config.validate_operation("DELETE"))
+    print("\n连接池配置:")
+    print(f"连接池启用: {session_config.get('DB_POOL_ENABLED')}")
+    print(f"最小连接数: {session_config.get('DB_POOL_MIN_SIZE')}")
+    print(f"最大连接数: {session_config.get('DB_POOL_MAX_SIZE')}")
+    print(f"连接回收时间: {session_config.get('DB_POOL_RECYCLE')}秒")
+    print(f"连接最大存活时间: {session_config.get('DB_POOL_MAX_LIFETIME')}秒")
+    print(f"获取连接超时: {session_config.get('DB_POOL_ACQUIRE_TIMEOUT')}秒")
 
-    # 检查风险等级
-    print("\n风险等级检查:")
-    print("LOW 风险允许:", config.is_operation_allowed(SQLRiskLevel.LOW))
-    print("CRITICAL 风险允许:", config.is_operation_allowed(SQLRiskLevel.CRITICAL))
+    print("\n安全配置:")
+    print(f"允许的风险等级: {session_config.get('ALLOWED_RISK_LEVELS')}")
+    print(f"允许敏感信息: {session_config.get('ALLOW_SENSITIVE_INFO')}")
+    print(f"最大SQL长度: {session_config.get('MAX_SQL_LENGTH')}")
+    print(f"阻止的模式: {session_config.get('BLOCKED_PATTERNS')}")
+    print(f"启用查询检查: {session_config.get('ENABLE_QUERY_CHECK')}")
+    print(f"启用数据库隔离: {session_config.get('ENABLE_DATABASE_ISOLATION')}")
+    print(f"数据库访问级别: {session_config.get('DATABASE_ACCESS_LEVEL')}")
 
-    # 更新环境变量
+    print("\n服务器配置:")
+    print(f"主机: {session_config.get('HOST')}")
+    print(f"端口: {session_config.get('PORT')}")
+    print(f"环境类型: {session_config.get('ENV_TYPE')}")
+    print(f"登录URL: {session_config.get('MCP_LOGIN_URL')}")
+    print(f"OAuth用户名: {session_config.get('OAUTH_USER_NAME')}")
+    print(f"OAuth密码: {session_config.get('OAUTH_USER_PASSWORD')}")
+
+    print("\n日志配置:")
+    print(f"日志级别: {session_config.get('LOG_LEVEL')}")
+
+    # 更新会话配置
+    new_config = {
+        "MYSQL_PORT": "13308"
+    }
+    session_config.update(new_config)
+
+    print("\n更新后的配置:")
+    print(f"MySQL端口: {session_config.get('MYSQL_PORT')}")
+
+    # 更新环境文件
     try:
-        updates = {
-            "MAX_SQL_LENGTH": "5000",
-            "DB_POOL_MAX_SIZE": "30",
-            "DB_POL_MAX_SIZE": "500"
-        }
-
-        arguments = {
-            "host": "localhost",
-            "port": "13308",
-            "user": "videx",
-            "password": "password",
-            "database": "tpch_tiny",
-            "role": "admin"
-        }
-
-        new_config = {
-            "MYSQL_HOST": arguments["host"],
-            "MYSQL_PORT": arguments["port"],
-            "MYSQL_USER": arguments["user"],
-            "MYSQL_PASSWORD": arguments["password"],
-            "MYSQL_DATABASE": arguments["database"],
-            "MYSQL_ROLE": arguments["role"]
-        }
-
-        EnvFileManager.update(new_config)
-        print("\n环境变量更新成功")
-
-        # 重新加载配置查看更新效果
-        config = AppConfigManager()
-        print("\n更新后的安全配置:", config.get_security_config())
-        print("更新后的连接池配置:", config.get_pool_config())
-
+        EnvFileManager.update({
+            "DB_POOL_MAX_SIZE": "200"
+        })
+        print("\n环境文件更新成功")
     except Exception as e:
-        print(f"更新失败: {e}")
+        print(f"更新环境文件失败: {e}")

@@ -3,8 +3,9 @@ from typing import Dict, Any, Sequence, List
 import re
 from mcp import Tool
 from mcp.types import TextContent
+
+from server.config.request_context import get_current_database_manager
 from server.tools.mysql.base import BaseHandler
-from server.config import AppConfigManager
 from server.tools.mysql import ExecuteSQL
 from server.utils.logger import get_logger, configure_logger
 
@@ -41,7 +42,9 @@ class SlowQueryAnalyzer(BaseHandler):
         )
 
     async def run_tool(self, arguments: Dict[str, Any]) -> Sequence[TextContent]:
-        config = AppConfigManager().get_database_config()
+        db_manager = get_current_database_manager()
+        config = db_manager.get_current_config()
+
         threshold = arguments.get("threshold", 1)
         limit = arguments.get("limit", 10)
 

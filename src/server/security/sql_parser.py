@@ -1,7 +1,7 @@
 import sqlparse
 import logging
 from typing import List, Dict, Any
-from server.config import AppConfigManager, SQLRiskLevel, DatabaseAccessLevel
+from server.config import SessionConfigManager, SQLRiskLevel, DatabaseAccessLevel
 
 logger = logging.getLogger(__name__)
 
@@ -9,27 +9,31 @@ logger = logging.getLogger(__name__)
 class SQLParser:
     """
     SQL 解析器，提供精确的 SQL 解析和安全分析功能
+    基于会话级配置管理器实现
     """
 
-    def __init__(self, config_manager: AppConfigManager):
+    def __init__(self, session_config: SessionConfigManager):
         """
         初始化 SQL 解析器
-        :param config_manager: 配置管理器实例
+        :param session_config: 会话配置管理器实例
         """
-        self.config = config_manager
-        self.ddl_operations = AppConfigManager.DDL_OPERATIONS
-        self.dml_operations = AppConfigManager.DML_OPERATIONS
-        self.metadata_operations = AppConfigManager.METADATA_OPERATIONS
+        self.session_config = session_config
+
+        # 定义操作类型集合
+        self.ddl_operations = {'CREATE', 'ALTER', 'DROP', 'TRUNCATE', 'RENAME'}
+        self.dml_operations = {'SELECT', 'INSERT', 'UPDATE', 'DELETE', 'MERGE'}
+        self.metadata_operations = {'SHOW', 'DESC', 'DESCRIBE', 'EXPLAIN', 'HELP', 'ANALYZE', 'CHECK', 'CHECKSUM',
+                                    'OPTIMIZE'}
 
     def parse_query(self, sql_query: str) -> Dict[str, Any]:
         """
-        解析 SQL 查询，返回详细的解析结果和安全分析
+        解析 SQL 查询，返回详细的解析结果
 
         Args:
             sql_query: SQL 查询语句
 
         Returns:
-            Dict: 包含解析结果和安全分析的字典
+            Dict: 包含解析结果的字典
         """
         if not sql_query or not sql_query.strip():
             return self._empty_result()
@@ -55,7 +59,7 @@ class SQLParser:
 
     def analyze_security(self, parsed_result: Dict[str, Any]) -> Dict[str, Any]:
         """
-        分析 SQL 的安全风险
+        分析 SQL 的安全风险，基于会话配置
 
         Args:
             parsed_result: parse_query 返回的结果
@@ -70,28 +74,32 @@ class SQLParser:
         }
 
         # 检查风险等级是否允许
-        if not self.config.is_operation_allowed(analysis['risk_level']):
+        allowed_risk_levels = self.session_config.get('ALLOWED_RISK_LEVELS', set())
+        if analysis['risk_level'] not in allowed_risk_levels:
             analysis['is_allowed'] = False
             analysis['reasons'].append(
-                f"风险等级 {analysis['risk_level'].name} 在当前环境中被禁止"
+                f"风险等级 {analysis['risk_level'].name} 在当前会话中被禁止"
             )
 
         # 检查是否包含阻止的模式
-        if self.config.should_block_sql(parsed_result['original_query']):
+        blocked_patterns = self.session_config.get('BLOCKED_PATTERNS', [])
+        if self._contains_blocked_pattern(parsed_result['original_query'], blocked_patterns):
             analysis['is_allowed'] = False
             analysis['reasons'].append(
                 "SQL 包含被阻止的模式"
             )
 
         # 检查敏感信息访问
-        if not self.config.ALLOW_SENSITIVE_INFO and self._contains_sensitive_info(parsed_result):
+        allow_sensitive_info = self.session_config.get('ALLOW_SENSITIVE_INFO', False)
+        if not allow_sensitive_info and self._contains_sensitive_info(parsed_result):
             analysis['is_allowed'] = False
             analysis['reasons'].append(
                 "SQL 可能访问敏感信息"
             )
 
         # 检查数据库隔离
-        if self.config.ENABLE_DATABASE_ISOLATION:
+        enable_database_isolation = self.session_config.get('ENABLE_DATABASE_ISOLATION', False)
+        if enable_database_isolation:
             if not self._is_database_access_allowed(parsed_result):
                 analysis['is_allowed'] = False
                 analysis['reasons'].append(
@@ -145,7 +153,8 @@ class SQLParser:
         # 收集所有语句的信息
         results = []
         for stmt in statements:
-            results.append(self._process_single_statement(stmt, stmt.value))
+            formatted_sql = self._format_sql(stmt.value)
+            results.append(self._process_single_statement(stmt, formatted_sql))
 
         # 确定整体风险最高的操作类型和类别
         highest_risk_op = ''
@@ -300,6 +309,14 @@ class SQLParser:
         # 其他操作默认为中等风险
         return SQLRiskLevel.MEDIUM
 
+    def _contains_blocked_pattern(self, sql_query: str, blocked_patterns: List[str]) -> bool:
+        """检查 SQL 是否包含被阻止的模式"""
+        if not blocked_patterns:
+            return False
+
+        sql_upper = sql_query.upper()
+        return any(pattern in sql_upper for pattern in blocked_patterns)
+
     def _contains_sensitive_info(self, parsed_result: Dict[str, Any]) -> bool:
         """检查 SQL 是否可能访问敏感信息"""
         # 简单的关键字检测
@@ -320,14 +337,18 @@ class SQLParser:
     def _is_database_access_allowed(self, parsed_result: Dict[str, Any]) -> bool:
         """检查数据库访问是否符合隔离策略"""
         # 获取数据库访问级别
-        access_level = self.config.DATABASE_ACCESS_LEVEL
+        access_level_str = self.session_config.get('DATABASE_ACCESS_LEVEL', 'permissive')
+        try:
+            access_level = DatabaseAccessLevel(access_level_str.lower())
+        except ValueError:
+            access_level = DatabaseAccessLevel.PERMISSIVE
 
         # 宽松模式允许所有访问
         if access_level == DatabaseAccessLevel.PERMISSIVE:
             return True
 
         # 获取配置的数据库名称
-        configured_db = self.config.MYSQL_DATABASE
+        configured_db = self.session_config.get('MYSQL_DATABASE', '')
 
         # 检查每个表是否在允许的数据库中
         for table in parsed_result['tables']:
@@ -403,11 +424,22 @@ class SQLParser:
 
 
 if __name__ == '__main__':
-    # 初始化配置管理器
-    config_manager = AppConfigManager()
+    # 创建会话配置管理器
+    session_config = SessionConfigManager({
+        "ALLOWED_RISK_LEVELS": "LOW,MEDIUM",
+        "BLOCKED_PATTERNS": "DROP TABLE,DELETE FROM",
+        "ALLOW_SENSITIVE_INFO": "false",
+        "ENABLE_DATABASE_ISOLATION": "true",
+        "DATABASE_ACCESS_LEVEL": "restricted",
+        "MYSQL_HOST": "localhost",
+        "MYSQL_PORT": "3306",
+        "MYSQL_USER": "root",
+        "MYSQL_PASSWORD": "password",
+        "MYSQL_DATABASE": "mcp_db"
+    })
 
     # 创建 SQL 解析器
-    sql_parser = SQLParser(config_manager)
+    sql_parser = SQLParser(session_config)
 
     # 解析 SQL 查询
     sql = "SELECT * FROM t_users; DELETE FROM t_users WHERE id < 1000"

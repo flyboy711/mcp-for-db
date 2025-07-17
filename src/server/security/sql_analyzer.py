@@ -2,7 +2,7 @@ import re
 import logging
 from typing import Dict, Any
 
-from server.config import AppConfigManager, SQLRiskLevel, EnvironmentType
+from server.config import SessionConfigManager, SQLRiskLevel, EnvironmentType
 from server.security.sql_parser import SQLParser
 
 logger = logging.getLogger(__name__)
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 class SQLRiskAnalyzer:
     """SQL 风险分析器，提供全面的 SQL 风险评估和安全检查"""
 
-    def __init__(self, config_manager: AppConfigManager):
+    def __init__(self, config_manager: SessionConfigManager):
         """
         初始化 SQL 风险分析器
         :param config_manager: 配置管理器实例
@@ -19,9 +19,9 @@ class SQLRiskAnalyzer:
         self.config = config_manager
         self.sql_parser = SQLParser(config_manager)
 
-        logger.info(f"SQL风险分析器初始化 - 环境: {self.config.ENV_TYPE.value}")
-        logger.info(f"允许的风险等级: {[level.name for level in self.config.ALLOWED_RISK_LEVELS]}")
-        logger.info(f"阻止的模式: {self.config.BLOCKED_PATTERNS}")
+        logger.info(f"SQL风险分析器初始化 - 环境: {self.config.get("ENV_TYPE")}")
+        logger.info(f"允许的风险等级: {[level for level in self.config.get("ALLOWED_RISK_LEVELS")]}")
+        logger.info(f"阻止的模式: {self.config.get("BLOCKED_PATTERNS")}")
 
     def analyze_risk(self, sql_query: str) -> Dict[str, Any]:
         """
@@ -144,7 +144,7 @@ class SQLRiskAnalyzer:
         }
 
         # 根据环境类型调整估算
-        if self.config.ENV_TYPE == EnvironmentType.PRODUCTION:
+        if self.config.get("ENV_TYPE") == EnvironmentType.PRODUCTION:
             if category == 'DDL':
                 impact['estimated_rows'] = int('inf')  # DDL 操作影响整个表
             elif operation in {'UPDATE', 'DELETE'}:
@@ -229,7 +229,7 @@ class SQLRiskAnalyzer:
                 'affected_tables': parsed_result['tables'],
                 'estimated_impact': impact,
                 'risk_level': risk_level,
-                'is_allowed': not is_dangerous and risk_level in self.config.ALLOWED_RISK_LEVELS,
+                'is_allowed': not is_dangerous and risk_level in self.config.get("ALLOWED_RISK_LEVELS"),
                 'reasons': ['回退分析模式'] if is_dangerous else [],
                 'multi_statement': parsed_result['multi_statement'],
                 'statement_count': parsed_result['statement_count']
@@ -243,7 +243,7 @@ class SQLRiskAnalyzer:
         sql_upper = sql_query.upper()
 
         # 检查阻止的模式
-        for pattern in self.config.BLOCKED_PATTERNS:
+        for pattern in self.config.get("BLOCKED_PATTERNS"):
             if re.search(pattern, sql_upper, re.IGNORECASE):
                 return True
 
@@ -260,10 +260,14 @@ class SQLRiskAnalyzer:
 
 if __name__ == '__main__':
     # 初始化配置管理器
-    config_manager = AppConfigManager()
+    session_config = SessionConfigManager({
+        "ENV_TYPE": "production",
+        "ALLOWED_RISK_LEVELS": "LOW,MEDIUM",
+        "BLOCKED_PATTERNS": "DROP TABLE,TRUNCATE TABLE"
+    })
 
     # 创建 SQL 风险分析器
-    risk_analyzer = SQLRiskAnalyzer(config_manager)
+    risk_analyzer = SQLRiskAnalyzer(session_config)
 
     # 分析 SQL 风险
     sql = "DELETE FROM users WHERE id = 1"

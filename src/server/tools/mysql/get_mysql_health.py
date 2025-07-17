@@ -1,6 +1,6 @@
 import logging
 from typing import Dict, Any, Sequence
-from server.config import AppConfigManager
+from server.config.request_context import get_current_database_manager
 from server.utils.logger import configure_logger, get_logger
 from mcp import Tool
 from mcp.types import TextContent
@@ -159,7 +159,8 @@ class GetDBHealthIndexUsage(BaseHandler):
         )
 
     async def run_tool(self, arguments: Dict[str, Any]) -> Sequence[TextContent]:
-        config = AppConfigManager().get_database_config()
+        db_manager = get_current_database_manager()
+        config = db_manager.get_current_config()
 
         count_zero_result = await self.get_count_zero(arguments, config)
         max_time_result = await self.get_max_timer(arguments, config)

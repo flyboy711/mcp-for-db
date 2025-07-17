@@ -1,5 +1,4 @@
 from typing import Dict, Any, Sequence, Type, ClassVar
-
 from mcp.types import TextContent, Tool
 
 

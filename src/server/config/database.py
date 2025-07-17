@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from typing import AsyncGenerator, Optional, Dict, Any, List, Union
 from enum import Enum
 
-from server.config import AppConfigManager, EnvFileManager
+from server.config import SessionConfigManager
 from server.security.sql_interceptor import SQLInterceptor, SecurityException
 from server.security.sql_parser import SQLParser
 from server.security.sql_analyzer import SQLRiskAnalyzer
@@ -40,14 +40,14 @@ class DatabasePermissionError(Exception):
 class DatabaseManager:
     """数据库管理器，集成连接池、安全检查和范围控制"""
 
-    def __init__(self, config_manager: AppConfigManager):
+    def __init__(self, session_config: SessionConfigManager):
         """
         初始化数据库管理器
 
         Args:
-            config_manager: 应用配置管理器实例
+            session_config: 会话配置管理器实例
         """
-        self.config = config_manager
+        self.session_config = session_config
         self._pool = None
         self._state = DatabaseConnectionState.UNINITIALIZED
         self._config_hash = None
@@ -56,14 +56,14 @@ class DatabaseManager:
         self._reconnect_attempts = 0
 
         # 初始化安全组件
-        self.sql_parser = SQLParser(config_manager)
-        self.risk_analyzer = SQLRiskAnalyzer(config_manager)
-        self.sql_interceptor = SQLInterceptor(config_manager)
+        self.sql_parser = SQLParser(session_config)
+        self.risk_analyzer = SQLRiskAnalyzer(session_config)
+        self.sql_interceptor = SQLInterceptor(session_config)
 
         # 初始化数据库范围检查器
         self.database_checker = None
-        if config_manager.ENABLE_DATABASE_ISOLATION:
-            self.database_checker = DatabaseScopeChecker(config_manager)
+        if session_config.get('bool_ENABLE_DATABASE_ISOLATION', False):
+            self.database_checker = DatabaseScopeChecker(session_config)
 
         logger.info("数据库管理器初始化完成")
 
@@ -106,14 +106,21 @@ class DatabaseManager:
         await self.close_pool()
 
         logger.info("初始化数据库连接池...")
-        config = self.config.get_database_config()
-        new_hash = self._get_config_hash(config)
+
+        # 计算当前配置哈希
+        current_config = self.get_current_config()
+        new_hash = self._compute_config_hash(current_config)
+
+        # 如果配置变更，更新内部状态
+        if new_hash != self._config_hash:
+            self._config_hash = new_hash
+            logger.info("检测到配置变更，使用新配置初始化连接池")
 
         # 构建连接参数
-        connection_params = self._build_connection_params(config)
+        connection_params = self._build_connection_params()
 
         # 记录安全的配置信息（不含密码）
-        safe_config = {k: v for k, v in config.items() if k != "password"}
+        safe_config = {k: v for k, v in connection_params.items() if k != "password"}
         logger.debug(f"连接参数: {safe_config}")
 
         try:
@@ -121,7 +128,6 @@ class DatabaseManager:
             self._pool = await aiomysql.create_pool(**connection_params)
             logger.info("数据库连接池初始化成功")
             self._state = DatabaseConnectionState.ACTIVE
-            self._config_hash = new_hash
             self._last_connection_time = time.time()
             self._reconnect_attempts = 0
             return
@@ -143,21 +149,43 @@ class DatabaseManager:
             self._handle_connection_error(e)
             raise
 
-    def _build_connection_params(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    def get_current_config(self) -> Dict[str, Any]:
+        """获取当前配置字典"""
+        return {
+            # 数据库配置
+            "host": self.session_config.get("MYSQL_HOST"),
+            "port": self.session_config.get("MYSQL_PORT"),
+            "user": self.session_config.get("MYSQL_USER"),
+            "password": self.session_config.get("MYSQL_PASSWORD"),
+            "database": self.session_config.get("MYSQL_DATABASE"),
+            "DB_AUTH_PLUGIN": self.session_config.get("DB_AUTH_PLUGIN"),
+            "DB_CONNECTION_TIMEOUT": self.session_config.get("DB_CONNECTION_TIMEOUT", 5),
+
+            # 连接池配置
+            "DB_POOL_MIN_SIZE": self.session_config.get("DB_POOL_MIN_SIZE", 5),
+            "DB_POOL_MAX_SIZE": self.session_config.get("DB_POOL_MAX_SIZE", 20),
+        }
+
+    def _compute_config_hash(self, config: Dict[str, Any]) -> str:
+        """计算配置哈希值用于标识配置变更"""
+        return hashlib.md5(str(config).encode('utf-8')).hexdigest()
+
+    def _build_connection_params(self) -> Dict[str, Any]:
         """构建连接参数"""
         return {
-            "host": config["host"],
-            "port": config["port"],
-            "user": config["user"],
-            "password": config["password"],
-            "db": config["database"],
+            "host": self.session_config.get("MYSQL_HOST", "localhost"),
+            "port": int(self.session_config.get("MYSQL_PORT", 3306)),
+            "user": self.session_config.get("MYSQL_USER"),
+            "password": self.session_config.get("MYSQL_PASSWORD"),
+            "db": self.session_config.get("MYSQL_DATABASE"),
             "autocommit": True,
-            "minsize": config.get("db_pool_min_size", 1),
-            "maxsize": config.get("db_pool_max_size", 10),
+            "minsize": self.session_config.get("DB_POOL_MIN_SIZE", 5),
+            "maxsize": self.session_config.get("DB_POOL_MAX_SIZE", 20),
             "charset": "utf8mb4",
             "cursorclass": aiomysql.DictCursor,
-            "connect_timeout": config.get("connection_timeout", 5),
-            "auth_plugin": self._successful_auth_plugin or config.get("auth_plugin", "mysql_native_password")
+            "connect_timeout": self.session_config.get("DB_CONNECTION_TIMEOUT", 5),
+            "auth_plugin": self._successful_auth_plugin or self.session_config.get("DB_AUTH_PLUGIN",
+                                                                                   "mysql_native_password")
         }
 
     async def _try_alternative_auth(self, params: Dict[str, Any], max_retries: int) -> None:
@@ -187,10 +215,9 @@ class DatabaseManager:
                 self._last_connection_time = time.time()
                 self._reconnect_attempts = 0
 
-                # 如果成功使用特定插件，更新配置
+                # 如果成功使用特定插件，更新会话配置
                 if plugin:
-                    # 使用配置管理类更新环境变量
-                    EnvFileManager().update({"DB_AUTH_PLUGIN": plugin})
+                    self.session_config.update({"DB_AUTH_PLUGIN": plugin})
                 return
             except Exception as e:
                 logger.warning(f"插件 {plugin} 失败: {str(e)}")
@@ -210,12 +237,12 @@ class DatabaseManager:
         if "access denied" in error_msg:
             logger.error("访问被拒绝，请检查用户名和密码")
         elif "unknown database" in error_msg:
-            db_name = self.config.MYSQL_DATABASE
+            db_name = self.session_config.get("MYSQL_DATABASE")
             logger.error(f"数据库 '{db_name}' 不存在")
         elif "can't connect" in error_msg or "connection refused" in error_msg:
             logger.error("无法连接到MySQL服务器，请检查服务是否启动")
         elif "authentication plugin" in error_msg:
-            current_auth = self.config.DB_AUTH_PLUGIN
+            current_auth = self.session_config.get("DB_AUTH_PLUGIN")
             logger.error(f"认证插件问题: {error_msg}")
             if current_auth == 'caching_sha2_password':
                 logger.error("解决方案:")
@@ -266,8 +293,8 @@ class DatabaseManager:
         await self.ensure_pool()
 
         # 检查配置是否变更
-        current_config = self.config.get_database_config()
-        current_hash = self._get_config_hash(current_config)
+        current_config = self.get_current_config()
+        current_hash = self._compute_config_hash(current_config)
 
         if current_hash != self._config_hash and self._state == DatabaseConnectionState.ACTIVE:
             logger.warning("数据库配置已变更，正在重建连接池...")
@@ -573,10 +600,6 @@ class DatabaseManager:
                 logger.error("事务执行失败，已回滚")
                 raise
 
-    def _get_config_hash(self, config: Dict[str, Any]) -> str:
-        """生成配置哈希用于检测变更"""
-        return hashlib.md5(str(config).encode('utf-8')).hexdigest()
-
     def _log_query_performance(self, query: str, execution_time: float):
         """记录查询性能日志"""
         # 截断长查询以避免日志过大
@@ -652,70 +675,83 @@ class DatabaseManager:
             return ""
 
 
-# 全局数据库管理器实例
-config_manager = AppConfigManager()
-database_manager = DatabaseManager(config_manager)
-
-
 # 测试代码
 async def test_database_operations():
     """测试数据库操作"""
     logger.info("\n=== 启动数据库操作测试 ===")
 
+    # 创建会话配置管理器
+    session_config = SessionConfigManager({
+        "MYSQL_HOST": "localhost",
+        "MYSQL_PORT": "3306",
+        "MYSQL_USER": "root",
+        "MYSQL_PASSWORD": "password",
+        "MYSQL_DATABASE": "mcp_db",
+        "MYSQL_ROLE": "admin",
+        "DB_AUTH_PLUGIN": "mysql_native_password",
+        "DB_CONNECTION_TIMEOUT": "5",
+        "DB_POOL_ENABLED": "true",
+        "DB_POOL_MIN_SIZE": "5",
+        "DB_POOL_MAX_SIZE": "20",
+        "ENABLE_DATABASE_ISOLATION": "true"
+    })
+
+    # 创建数据库管理器实例
+    database_manager = DatabaseManager(session_config)
+
     try:
-        # # 场景1: 获取数据库信息
-        # logger.info("测试场景1: 获取数据库信息")
-        # db_info = await database_manager.get_database_info()
-        # logger.info(f"数据库信息: {db_info}")
-        #
-        # # 场景2: 获取当前数据库名称
-        # logger.info("\n测试场景2: 获取当前数据库名称")
-        # current_db = await database_manager.get_current_database()
-        # logger.info(f"当前数据库: {current_db}")
-        #
-        # # 场景3: 执行简单查询
-        # logger.info("\n测试场景3: 执行简单查询")
-        # result = await database_manager.execute_query("SELECT VERSION() AS version")
-        # logger.info(f"数据库版本: {result[0]['version']}")
-        #
-        # # 场景4: 测试元数据查询增强
-        # logger.info("\n测试场景4: 测试元数据查询增强")
-        # result = await database_manager.execute_query("SHOW TABLES")
-        # logger.info(f"当前数据库中所有的表：{result}")
-        # for row in result:
-        #     logger.info(f"表名: {row.get('table_name', row.get('Tables_in_test', '未知'))}")
-        #
-        # # 场景5: 测试流式查询
-        # logger.info("\n测试场景5: 测试流式查询")
-        # # 首先获取当前数据库中的所有表
-        # tables = await database_manager.execute_query("SHOW TABLES")
-        # if tables:
-        #     # 使用找到的第一个表进行测试
-        #     table_name = list(tables[0].values())[0]
-        #     logger.info(f"使用表: {table_name} 进行流式查询测试")
-        #
-        #     # 获取异步生成器
-        #     result_generator = await database_manager.execute_query(
-        #         f"SELECT * FROM {table_name}",
-        #         stream_results=True,
-        #         batch_size=100
-        #     )
-        #
-        #     # 使用 async for 迭代结果
-        #     async for batch in result_generator:
-        #         logger.info(f"获取到 {len(batch)} 条记录")
-        # else:
-        #     logger.warning("没有找到任何表进行测试")
-        #
-        #
-        # # 场景6: 测试DML操作
-        # logger.info("\n测试场景6: 测试DML操作")
-        # try:
-        #     result = await database_manager.execute_query("INSERT INTO orders (O_ORDERSTATUS) VALUES ('test1')")
-        #     logger.info(f"插入操作结果: {result}")
-        # except DatabasePermissionError as dpe:
-        #     logger.info(f"权限错误处理成功: {dpe.message}")
-        #     logger.info(f"操作: {dpe.operation}, 表: {dpe.table}")
+        # 场景1: 获取数据库信息
+        logger.info("测试场景1: 获取数据库信息")
+        db_info = await database_manager.get_database_info()
+        logger.info(f"数据库信息: {db_info}")
+
+        # 场景2: 获取当前数据库名称
+        logger.info("\n测试场景2: 获取当前数据库名称")
+        current_db = await database_manager.get_current_database()
+        logger.info(f"当前数据库: {current_db}")
+
+        # 场景3: 执行简单查询
+        logger.info("\n测试场景3: 执行简单查询")
+        result = await database_manager.execute_query("SELECT VERSION() AS version")
+        logger.info(f"数据库版本: {result[0]['version']}")
+
+        # 场景4: 测试元数据查询增强
+        logger.info("\n测试场景4: 测试元数据查询增强")
+        result = await database_manager.execute_query("SHOW TABLES")
+        logger.info(f"当前数据库中所有的表：{result}")
+        for row in result:
+            logger.info(f"表名: {row.get('table_name', row.get('Tables_in_test', '未知'))}")
+
+        # 场景5: 测试流式查询
+        logger.info("\n测试场景5: 测试流式查询")
+        # 首先获取当前数据库中的所有表
+        tables = await database_manager.execute_query("SHOW TABLES")
+        if tables:
+            # 使用找到的第一个表进行测试
+            table_name = list(tables[0].values())[0]
+            logger.info(f"使用表: {table_name} 进行流式查询测试")
+
+            # 获取异步生成器
+            result_generator = await database_manager.execute_query(
+                f"SELECT * FROM {table_name}",
+                stream_results=True,
+                batch_size=100
+            )
+
+            # 使用 async for 迭代结果
+            async for batch in result_generator:
+                logger.info(f"获取到 {len(batch)} 条记录")
+        else:
+            logger.warning("没有找到任何表进行测试")
+
+        # 场景6: 测试DML操作
+        logger.info("\n测试场景6: 测试DML操作")
+        try:
+            result = await database_manager.execute_query("INSERT INTO orders (O_ORDERSTATUS) VALUES ('test1')")
+            logger.info(f"插入操作结果: {result}")
+        except DatabasePermissionError as dpe:
+            logger.info(f"权限错误处理成功: {dpe.message}")
+            logger.info(f"操作: {dpe.operation}, 表: {dpe.table}")
 
         # 场景7: 测试安全拦截
         logger.info("\n测试场景7: 测试安全拦截")
@@ -724,21 +760,21 @@ async def test_database_operations():
         except SecurityException as se:
             logger.info(f"安全拦截成功: {se.message}")
 
-        # # 场景8: 测试数据库范围检查
-        # logger.info("\n测试场景8: 测试数据库范围检查")
-        # if config_manager.ENABLE_DATABASE_ISOLATION:
-        #     try:
-        #         await database_manager.execute_query("SELECT * FROM mcp_db.t_users")
-        #     except DatabaseScopeViolation as dve:
-        #         logger.info(f"数据库范围检查成功: {dve.message}")
-        #
-        # # 场景9: 测试连接恢复
-        # logger.info("\n测试场景9: 测试连接恢复")
-        # # 模拟连接失败
-        # database_manager._state = DatabaseConnectionState.ERROR
-        # await database_manager.reconnect()
-        # db_info = await database_manager.get_database_info()
-        # logger.info(f"重新连接后数据库状态: {db_info['status']}")
+        # 场景8: 测试数据库范围检查
+        logger.info("\n测试场景8: 测试数据库范围检查")
+        if session_config.get('bool_ENABLE_DATABASE_ISOLATION', False):
+            try:
+                await database_manager.execute_query("SELECT * FROM mcp_db.t_users")
+            except DatabaseScopeViolation as dve:
+                logger.info(f"数据库范围检查成功: {dve.message}")
+
+        # 场景9: 测试连接恢复
+        logger.info("\n测试场景9: 测试连接恢复")
+        # 模拟连接失败
+        database_manager._state = DatabaseConnectionState.ERROR
+        await database_manager.reconnect()
+        db_info = await database_manager.get_database_info()
+        logger.info(f"重新连接后数据库状态: {db_info['status']}")
 
     except Exception as e:
         logger.exception(f"测试失败: {str(e)}")
@@ -749,6 +785,18 @@ async def test_database_operations():
 
 
 async def main():
+    # 创建会话配置管理器
+    session_config = SessionConfigManager({
+        "MYSQL_HOST": "localhost",
+        "MYSQL_PORT": "13308",
+        "MYSQL_USER": "videx",
+        "MYSQL_PASSWORD": "password",
+        "MYSQL_DATABASE": "tpch_tiny"
+    })
+
+    # 创建数据库管理器实例
+    database_manager = DatabaseManager(session_config)
+
     try:
         # 获取当前数据库名称
         current_db = await database_manager.get_current_database()

@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import os
 from collections.abc import AsyncIterator
+from dotenv import load_dotenv
 from starlette.responses import Response
 import click
 import uvicorn
@@ -11,12 +12,12 @@ from mcp.server.sse import SseServerTransport
 from mcp.server.lowlevel import Server
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp.types import Tool, TextContent, Prompt, GetPromptResult, Resource
-
 from starlette.applications import Starlette
 from starlette.routing import Route, Mount
 from starlette.types import Scope, Receive, Send
-
-from server.config.database import database_manager
+from server.config import SessionConfigManager
+from server.config.database import DatabaseManager
+from server.config.request_context import RequestContext
 from server.oauth import OAuthMiddleware, login, login_page
 from server.tools.mysql.base import ToolRegistry
 from server.prompts.BasePrompt import PromptRegistry
@@ -26,7 +27,7 @@ from server.resources.BaseResource import ResourceRegistry
 from server.utils.logger import configure_logger, get_logger
 from starlette.middleware import Middleware
 
-# 全局标志
+# 定义全局资源初始化标识
 resources_initialized = False
 
 # 初始化服务器
@@ -44,9 +45,9 @@ async def initialize_global_resources():
 
     logger.info("开始初始化全局资源")
     try:
-        # 初始化数据库连接池
-        logger.info("初始化数据库连接池")
-        await database_manager.initialize_pool()
+        # 注意：这里不再初始化全局数据库连接池,每个请求会有自己的数据库管理器
+
+        # 其他全局资源初始化: 比如日志资源、数据库白皮书资源，这部分先暴露出来，功能待定
 
         logger.info("所有资源初始化完成")
         resources_initialized = True
@@ -57,7 +58,6 @@ async def initialize_global_resources():
 
 async def close_global_resources():
     """全局资源关闭函数"""
-
     global resources_initialized
 
     if not resources_initialized:
@@ -66,11 +66,8 @@ async def close_global_resources():
 
     logger.info("开始关闭所有资源")
     try:
-        # 关闭数据库连接池
-        logger.info("关闭数据库连接池")
-        await database_manager.close_pool()
-
-        logger.info("所有资源已关闭")
+        # 关闭其他全局资源
+        pass
     except Exception as e:
         logger.exception(f"关闭资源时出错: {str(e)}")
     finally:
@@ -79,7 +76,7 @@ async def close_global_resources():
 
 @app.list_resources()
 async def handle_get_resources() -> List[Resource]:
-    """列出所有可用的MySQL表资源"""
+    """列出所有可用的 MySQL 表资源"""
     return await ResourceRegistry.get_all_resources()
 
 
@@ -89,6 +86,8 @@ async def handle_read_resource(uri: AnyUrl) -> str:
     try:
         logger.info(f"开始读取资源: {uri}")
         content = await ResourceRegistry.get_resource(uri)
+        if content is None:
+            content = "null"
         logger.info(f"资源 {uri} 读取成功，内容长度: {len(content)}")
         return content
     except Exception as e:
@@ -202,11 +201,21 @@ async def run_stdio():
         async with stdio_server() as (read_stream, write_stream):
             try:
                 logger.debug("初始化流式传输接口")
-                await app.run(
-                    read_stream,
-                    write_stream,
-                    app.create_initialization_options()
-                )
+
+                # 创建会话配置管理器 - 基于全局默认配置
+                session_config = SessionConfigManager(global_default_session_config.get_all())
+
+                # 创建数据库管理器
+                db_manager = DatabaseManager(session_config)
+
+                # 设置请求上下文
+                with RequestContext(session_config, db_manager):
+                    await app.run(
+                        read_stream,
+                        write_stream,
+                        app.create_initialization_options()
+                    )
+
                 logger.info("标准输入输出模式服务结束")
             except Exception as e:
                 logger.critical(f"标准输入输出模式服务器错误: {str(e)}")
@@ -234,14 +243,24 @@ def run_sse():
             request: HTTP请求对象
         """
         logger.info(f"新的SSE连接 [client={request.client}]")
-        async with sse.connect_sse(
-                request.scope, request.receive, request.send
-        ) as streams:
-            try:
-                await app.run(streams[0], streams[1], app.create_initialization_options())
-            except Exception as e:
-                logger.error(f"SSE连接处理异常: {str(e)}")
-                raise
+
+        # 创建会话配置管理器 - 基于全局默认配置
+        session_config = SessionConfigManager(global_default_session_config.get_all())
+
+        # 创建数据库管理器
+        db_manager = DatabaseManager(session_config)
+
+        # 设置请求上下文
+        with RequestContext(session_config, db_manager):
+            async with sse.connect_sse(
+                    request.scope, request.receive, request.send
+            ) as streams:
+                try:
+                    await app.run(streams[0], streams[1], app.create_initialization_options())
+                except Exception as e:
+                    logger.error(f"SSE连接处理异常: {str(e)}")
+                    raise
+
         logger.info(f"SSE连接断开 [client={request.client}]")
         return Response(status_code=204)
 
@@ -305,7 +324,16 @@ def run_streamable_http(json_response: bool, oauth: bool):
         else:
             logger.info(f"新的HTTP请求 [method={scope['method']}, path={scope['path']}, client={scope['client']}]")
             try:
-                await session_manager.handle_request(scope, receive, send)
+                # 创建会话配置管理器 - 基于全局默认配置
+                session_config = SessionConfigManager(global_default_session_config.get_all())
+
+                # 创建数据库管理器
+                db_manager = DatabaseManager(session_config)
+
+                # 设置请求上下文
+                with RequestContext(session_config, db_manager):
+                    await session_manager.handle_request(scope, receive, send)
+
                 logger.info(f"HTTP请求处理完成 [method={scope['method']}, path={scope['path']}]")
             except Exception as e:
                 logger.error(f"HTTP请求处理异常: {str(e)}")
@@ -362,8 +390,7 @@ def run_streamable_http(json_response: bool, oauth: bool):
 @click.option("--envfile", default=None, help="env file path")
 @click.option("--oauth", default=False, help="open oauth")
 @click.option("--mode", default="streamable_http", help="运行模式: sse, stdio, streamable_http")
-@click.option("--log_level", default="INFO", help="日志级别: DEBUG, INFO, WARNING, ERROR, CRITICAL")
-def main(mode, envfile, oauth, log_level):
+def main(mode, envfile, oauth):
     """
     主入口函数，用于命令行启动
     支持三种模式：
@@ -374,10 +401,10 @@ def main(mode, envfile, oauth, log_level):
     :param:
         mode (str): 运行模式，可选值为 "sse" 或 "stdio"
         envfile : 自定义环境配置文件
-        log_level ： 日志级别, 默认INFO
         oauth: 是否启用认证服务
     """
-    from dotenv import load_dotenv
+
+    global global_default_session_config
 
     # 获取当前文件所在目录的绝对路径
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -386,29 +413,50 @@ def main(mode, envfile, oauth, log_level):
 
     # 配置日志
     configure_logger(
-        log_level=log_level,
         log_filename="mcp_server.log"
     )
 
     logger.info("=" * 60)
     logger.info("开始启动MySQL MCP服务器")
-    logger.info(f"项目根目录: {server_dir}")
-    logger.info(f"运行模式: {mode}")
-    logger.info(f"日志级别: {log_level}")
+
+    # 创建全局默认会话配置
+    global_default_session_config = SessionConfigManager()
 
     # 优先加载指定的env文件
     if envfile:
         logger.info(f"加载环境变量文件: {envfile}")
-        load_dotenv(envfile)
+        if os.path.exists(envfile):
+            # 加载环境变量文件
+            load_dotenv(envfile)
+
+            # 更新全局默认会话配置
+            global_default_session_config.update_from_env()
+            logger.info("环境变量文件已加载到全局默认配置")
+        else:
+            logger.warning(f"指定的环境文件不存在: {envfile}")
     else:
-        # 拼接出config/.env的绝对路径
+        # 尝试加载默认环境变量文件
         env_path = os.path.join(server_dir, "config", ".env")
         logger.info(f"尝试加载默认环境变量文件: {env_path}")
         if os.path.exists(env_path):
+            # 加载环境变量文件
             load_dotenv(env_path)
-            logger.info("环境变量文件加载成功")
+
+            # 更新全局默认会话配置
+            global_default_session_config.update_from_env()
+            logger.info("默认环境变量文件已加载到全局默认配置")
         else:
             logger.warning("未找到默认环境变量文件，将使用系统环境变量")
+            # 从系统环境变量更新配置
+            global_default_session_config.update_from_env()
+
+    # 记录全局默认配置摘要
+    logger.info("全局默认配置摘要:")
+    for key, value in global_default_session_config.get_all().items():
+        if "PASSWORD" in key:
+            logger.info(f"{key}: {'*' * 8}")  # 隐藏密码
+        else:
+            logger.info(f"{key}: {value}")
 
     # 使用传入的默认模式
     try:
