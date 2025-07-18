@@ -422,33 +422,31 @@ def main(mode, envfile, oauth):
     # 创建全局默认会话配置
     global_default_session_config = SessionConfigManager()
 
-    # 优先加载指定的env文件
+    # 先尝试加载默认环境变量文件
+    env_path = os.path.join(server_dir, "config", ".env")
+    logger.info(f"尝试加载默认环境变量文件: {env_path}")
+    if os.path.exists(env_path):
+        # 加载环境变量文件
+        load_dotenv(env_path)
+        # 更新全局默认会话配置
+        global_default_session_config.update_from_env()
+        logger.info("默认环境变量文件已加载到全局默认配置")
+    else:
+        logger.warning("未找到默认环境变量文件，将使用系统环境变量")
+        # 从系统环境变量更新配置
+        global_default_session_config.update_from_env()
+
+    # 再看用户是否指定了env文件
     if envfile:
         logger.info(f"加载环境变量文件: {envfile}")
         if os.path.exists(envfile):
             # 加载环境变量文件
             load_dotenv(envfile)
-
             # 更新全局默认会话配置
             global_default_session_config.update_from_env()
             logger.info("环境变量文件已加载到全局默认配置")
         else:
             logger.warning(f"指定的环境文件不存在: {envfile}")
-    else:
-        # 尝试加载默认环境变量文件
-        env_path = os.path.join(server_dir, "config", ".env")
-        logger.info(f"尝试加载默认环境变量文件: {env_path}")
-        if os.path.exists(env_path):
-            # 加载环境变量文件
-            load_dotenv(env_path)
-
-            # 更新全局默认会话配置
-            global_default_session_config.update_from_env()
-            logger.info("默认环境变量文件已加载到全局默认配置")
-        else:
-            logger.warning("未找到默认环境变量文件，将使用系统环境变量")
-            # 从系统环境变量更新配置
-            global_default_session_config.update_from_env()
 
     # 记录全局默认配置摘要
     logger.info("全局默认配置摘要:")

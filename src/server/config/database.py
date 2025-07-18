@@ -317,7 +317,7 @@ class DatabaseManager:
                             operation = parsed_sql['operation_type'].upper()
 
                             # 硬阻止高危操作
-                            if operation in {'DROP', 'TRUNCATE', 'ALTER', 'RENAME', 'LOCK'}:
+                            if operation in {'DROP', 'TRUNCATE', 'ALTER', 'RENAME', 'LOCK', "DELETE"}:
                                 raise SecurityException(f"高危操作 {operation} 被强制阻止")
 
                             # 执行原始操作
@@ -683,18 +683,10 @@ async def test_database_operations():
     # 创建会话配置管理器
     session_config = SessionConfigManager({
         "MYSQL_HOST": "localhost",
-        "MYSQL_PORT": "3306",
-        "MYSQL_USER": "root",
+        "MYSQL_PORT": "13308",
+        "MYSQL_USER": "videx",
         "MYSQL_PASSWORD": "password",
-        "MYSQL_DATABASE": "mcp_db",
-        "MYSQL_ROLE": "admin",
-        "DB_AUTH_PLUGIN": "mysql_native_password",
-        "DB_CONNECTION_TIMEOUT": "5",
-        "DB_POOL_ENABLED": "true",
-        "DB_POOL_MIN_SIZE": "5",
-        "DB_POOL_MAX_SIZE": "20",
-        "ENABLE_DATABASE_ISOLATION": "true",
-        "ALLOWED_RISK_LEVELS": "LOW,MEDIUM"
+        "MYSQL_DATABASE": "tpch_tiny"
     })
 
     # 创建数据库管理器实例

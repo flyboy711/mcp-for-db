@@ -432,10 +432,10 @@ if __name__ == '__main__':
         "ENABLE_DATABASE_ISOLATION": "true",
         "DATABASE_ACCESS_LEVEL": "restricted",
         "MYSQL_HOST": "localhost",
-        "MYSQL_PORT": "3306",
-        "MYSQL_USER": "root",
+        "MYSQL_PORT": "13308",
+        "MYSQL_USER": "videx",
         "MYSQL_PASSWORD": "password",
-        "MYSQL_DATABASE": "mcp_db"
+        "MYSQL_DATABASE": "tpch_tiny"
     })
 
     # 创建 SQL 解析器

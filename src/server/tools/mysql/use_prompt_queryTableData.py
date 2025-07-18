@@ -36,7 +36,7 @@ from server.tools.mysql.base import BaseHandler
 class UsePromptQueryTableData(BaseHandler):
     name = "use_prompt_queryTableData"
     description = (
-        "查询表中的数据信息的提示词，根据需求在调用对应工具返回结果，（Retrieve data records from the database table.）"
+        "查询表名，表字段，随后执行查询工具，（Retrieve data records from the database table.）"
     )
 
     def get_tool_description(self) -> Tool:

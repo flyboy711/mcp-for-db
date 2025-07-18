@@ -256,8 +256,6 @@ class SessionConfigManager:
             except (ValueError, TypeError):
                 pass
 
-            logger.warning(f"忽略无效的风险等级: {level_str}")
-
         return allowed_levels
 
     def _load_from_env(self) -> None:
@@ -275,7 +273,6 @@ class SessionConfigManager:
         self.config['MYSQL_USER'] = os.getenv('MYSQL_USER')
         self.config['MYSQL_PASSWORD'] = os.getenv('MYSQL_PASSWORD')
         self.config['MYSQL_DATABASE'] = os.getenv('MYSQL_DATABASE')
-        self.config['MYSQL_ROLE'] = os.getenv('MYSQL_ROLE', 'readonly')
         self.config['DB_AUTH_PLUGIN'] = os.getenv('DB_AUTH_PLUGIN', 'mysql_native_password')
         self.config['DB_CONNECTION_TIMEOUT'] = self._parse_int_env('DB_CONNECTION_TIMEOUT', 5)
 
@@ -305,9 +302,6 @@ class SessionConfigManager:
         self.config['ENABLE_DATABASE_ISOLATION'] = _get_db_isolation_setting()
         self.config['DATABASE_ACCESS_LEVEL'] = _get_db_access_level().value
 
-        # 日志配置
-        self.config['LOG_LEVEL'] = os.getenv('LOG_LEVEL', 'DEBUG').upper()
-
     def update(self, new_cfg: Dict[str, Any]) -> None:
         self.config.update(new_cfg)
         self._update_hash()
@@ -335,7 +329,6 @@ if __name__ == "__main__":
     print(f"MySQL用户: {session_config.get('MYSQL_USER')}")
     print(f"MySQL密码: {session_config.get('MYSQL_PASSWORD')}")
     print(f"MySQL数据库: {session_config.get('MYSQL_DATABASE')}")
-    print(f"MySQL角色: {session_config.get('MYSQL_ROLE')}")
     print(f"连接超时: {session_config.get('DB_CONNECTION_TIMEOUT')}秒")
     print(f"认证插件: {session_config.get('DB_AUTH_PLUGIN')}")
 
@@ -363,9 +356,6 @@ if __name__ == "__main__":
     print(f"登录URL: {session_config.get('MCP_LOGIN_URL')}")
     print(f"OAuth用户名: {session_config.get('OAUTH_USER_NAME')}")
     print(f"OAuth密码: {session_config.get('OAUTH_USER_PASSWORD')}")
-
-    print("\n日志配置:")
-    print(f"日志级别: {session_config.get('LOG_LEVEL')}")
 
     # 更新会话配置
     new_config = {

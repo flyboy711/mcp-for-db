@@ -6,8 +6,6 @@ from .get_table_infos import DescribeTableTool, ShowColumnsTool
 from .get_mysql_health import GetDBHealthRunning, GetDBHealthIndexUsage, GetProcessList
 from .switch_database import SwitchDatabase
 from .use_prompt_queryTableData import UsePromptQueryTableData
-from .mysql_analyzer import SlowQueryAnalyzer, AnalyzeQueryPerformance
-from .IndexAdvisor import IndexAdvisor
 
 __all__ = [
     "ExecuteSQL",
@@ -20,15 +18,12 @@ __all__ = [
     "GetDBHealthRunning",
     "GetDBHealthIndexUsage",
     "UsePromptQueryTableData",
-    "SlowQueryAnalyzer",
     "GetProcessList",
     "GetDatabaseTables",
     "GetDatabaseInfo",
     "AnalyzeTableStats",
     "CheckTableConstraints",
-    "AnalyzeQueryPerformance",
     "ShowCreateTableTool",
     "DescribeTableTool",
     "ShowColumnsTool",
-    "IndexAdvisor"
 ]

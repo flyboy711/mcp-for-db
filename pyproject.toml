@@ -1,6 +1,6 @@
 [project]
 name = "mcp_for_db"
-version = "0.1.1"
+version = "0.2.0"
 license = { text = "MIT" }
 description = "Continuously develop integrated MCP servers dedicated to databases to advance the application of AI for DB."
 readme = "README.md"
