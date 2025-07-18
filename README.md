@@ -5,9 +5,11 @@
 本项目在官方仓库基础上做进一步开发，进一步增强 MCP for Mysql & DB 的功能。
 
 ## 介绍
+
 本服务提供自然语言操作数据库的功能，让您直接使用自然语言实现对数据库操作的需求，比如描述查询需求，分析数据库健康状态，分析复杂SQL语句，慢查询等，但是做了鉴权哦，没有权限是会执行失败的。
 同时，本服务允许多用户隔离的操作想要操作的数据库并提供切换数据库连接的工具哦。
 具体的，项目在原先具备的功能上添加了如下功能：
+
 - 数据库侧的连接池优化
 - 支持 多用户隔离访问数据库，某用户修改配置，其他用户无感，互不干扰
 - 支持 带SQL拦截解析权限认证的SQL执行&执行计划分析
@@ -24,6 +26,7 @@
 - 支持 慢查询分析
 
 ## 工具列表
+
 | 工具                        | 功能说明                                                           |
 |---------------------------|----------------------------------------------------------------|
 | sql_executor              | 执行单条SQL语句，但集成了SQL安全分析器、范围检查和权限控制，且只允许使用安全的参数化查询防止SQL注入攻击。      |
@@ -41,12 +44,16 @@
 | get_db_health_index_usage | 获取当前连接的MySQL库的索引使用情况,包含冗余索引情况、性能较差的索引情况、未使用索引且查询时间大于30秒top10情况 |
 | get_process_list          | 获取当前进程列表                                                       |
 | switch_database           | 动态切换数据库连接配置                                                    |
-|                           |                                                                |
+| analyze_query_performance | 分析SQL查询的性能特征，包括执行时间、资源使用等                                      |
+|                           |
+|                           |
 
 部分工具还在测试中。。。
 
 ## 使用说明
+
 打包构建：
+
 ```bash
 # 先下载依赖包
 pip install --upgrade pip setuptools wheel build twine
@@ -76,16 +83,19 @@ MYSQL_DATABASE=your_database
 项目支持三种通信机制：stdio、sse、streamable_http，默认 streamable_http.
 终端采用 uv 运行起服务器：
 Docker方式启动的话，需先生成 requirements.txt 依赖：
+
 ```bash
 uv pip compile pyproject.toml -o requirements.txt
 ```
 
 安装依赖包：
+
 ```bash
 uv pip install -r requirements.txt
 ```
 
 终端启动MCP服务器：
+
 ```bash
 uv run -m server.mcp.server_mysql
 
@@ -97,6 +107,7 @@ uv run -m mysql_mcp_server_pro.server --oauth true
 ```
 
 VSCode 中安装 Cline 插件并配置 JSON 文件：
+
 ```json
 {
   "mcpServers": {
@@ -118,6 +129,7 @@ MCP_LOGIN_URL=http://localhost:3000/login
 OAUTH_USER_NAME=admin
 OAUTH_USER_PASSWORD=admin
 ```
+
 再修改Cline的MCP Json配置文件：
 
 ```json
@@ -136,6 +148,7 @@ OAUTH_USER_PASSWORD=admin
   }
 }
 ```
+
 采用 stdio方式启动：
 
 ```bash
@@ -174,17 +187,20 @@ uv run -m mysql_mcp_server_pro.server --mode sse
 ```
 
 ## 效果展示
+
 注意：如果不提供数据库环境配置信息，服务器会默认提供一个测试环境中的数据库，故而用户不指定时，问答前，需切换数据库连接的配置信息。
 
 在 Cline 中配置好阿里通义千问大模型 API-KEY 后，进行提问即可。
 ⚠️：阿里通义千问大模型配置可参考：https://help.aliyun.com/zh/model-studio/cline
 
 ### 切换数据库
+
 ```
 提问：请先查询当前数据库的基本信息,然后切换到如下数据库:
 切换数据库为主机loacalhost,端口13308,用户名videx,密码password,数据库为tpch_tiny.
 切换后再次查询数据库基本信息.
 ```
+
 ![](assets/a942bdd8.png)
 
 展示完，开始切换数据库，此处需要控制权限，不能是admin，默认只读的。
@@ -245,6 +261,7 @@ ORDER BY revenue DESC;
 
 根据当前的索引情况，查看执行计划提出优化意见，以markdown格式输出，sql相关的表索引情况、执行情况，优化意见
 ```
+
 模型执行效果：
 
 ![](assets/c13af2ed.png)
@@ -252,6 +269,7 @@ ORDER BY revenue DESC;
 ![](assets/7897fac4.png)
 
 ### 健康状态分析
+
 ![image.png](assets/49fr45m7m.png)
 
 提问时，可以提问多个任务，模型解析后会逐个编排调用工具执行：
@@ -260,6 +278,7 @@ ORDER BY revenue DESC;
 ![](assets/b89707e8.png)
 
 ### 高危操作验证
+
 在执行高危 SQL 语句前，会拦截并作解析，判断是否与预先允许的操作一致，不一致则不放行，模型无法操作数据库，报错终止任务。
 ![](assets/67e89c1f.png)
 

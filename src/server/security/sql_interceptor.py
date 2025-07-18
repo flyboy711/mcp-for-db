@@ -377,8 +377,8 @@ async def test_sql_interceptor():
         "MYSQL_DATABASE": "test_db",
         "DATABASE_ACCESS_LEVEL": "restricted",
         "MAX_SQL_LENGTH": "5000",
-        "BLOCKED_PATTERNS": "DROP TABLE,TRUNCATE TABLE",
-        "ALLOWED_RISK_LEVELS": "LOW,MEDIUM"
+        # "BLOCKED_PATTERNS": "DROP TABLE,TRUNCATE TABLE",
+        # "ALLOWED_RISK_LEVELS": "LOW,MEDIUM"
     })
 
     # 创建SQL拦截器

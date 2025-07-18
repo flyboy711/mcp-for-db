@@ -6,6 +6,7 @@ from .get_table_infos import DescribeTableTool, ShowColumnsTool
 from .get_mysql_health import GetDBHealthRunning, GetDBHealthIndexUsage, GetProcessList
 from .switch_database import SwitchDatabase
 from .use_prompt_queryTableData import UsePromptQueryTableData
+from .mysql_analyzer import AnalyzeQueryPerformance
 
 __all__ = [
     "ExecuteSQL",
@@ -26,4 +27,5 @@ __all__ = [
     "ShowCreateTableTool",
     "DescribeTableTool",
     "ShowColumnsTool",
+    "AnalyzeQueryPerformance"
 ]

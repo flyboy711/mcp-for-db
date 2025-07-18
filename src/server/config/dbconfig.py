@@ -121,7 +121,7 @@ class SessionConfigManager:
             normalized['ALLOWED_RISK_LEVELS'] = self._parse_risk_levels(risk_str)
         else:
             # 如果没有提供，使用默认值
-            normalized['ALLOWED_RISK_LEVELS'] = set()
+            normalized['ALLOWED_RISK_LEVELS'] = self._parse_risk_levels("LOW")
 
         # 处理阻止模式
         if 'BLOCKED_PATTERNS' in raw_config:
@@ -135,9 +135,9 @@ class SessionConfigManager:
                     str(p).strip().upper() for p in patterns
                 ]
             else:
-                self.config['BLOCKED_PATTERNS'] = []
+                self.config['BLOCKED_PATTERNS'] = ['DROP TABLE,DROP DATABASE,DELETE FROM']
         else:
-            self.config['BLOCKED_PATTERNS'] = []
+            self.config['BLOCKED_PATTERNS'] = ['DROP TABLE,DROP DATABASE,DELETE FROM']
 
         # 转换数据库访问级别
         if 'DATABASE_ACCESS_LEVEL' in raw_config:
