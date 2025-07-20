@@ -1,8 +1,7 @@
 import asyncio
-from typing import List, Dict
 import re
 
-from server.tools.mysql import ExecuteSQL, AnalyzeQueryPerformance
+from server.tools.mysql import ExecuteSQL, CollectTableStats
 
 from server.config.request_context import get_current_database_manager
 
@@ -112,10 +111,10 @@ async def main_tools():
 
 async def main():
     try:
-        ret = AnalyzeQueryPerformance()
+        # ret = AnalyzeQueryPerformance()
+        ret = CollectTableStats()
         result = await ret.run_tool({
-            "query": "SELECT * FROM t_users WHERE age > ? and age<?",
-            "parameters": ["25", "26"]
+            "table_name": "orders"
         })
 
         print(result)

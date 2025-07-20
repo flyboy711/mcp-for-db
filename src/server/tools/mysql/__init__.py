@@ -5,8 +5,9 @@ from .get_table_infos import GetDatabaseInfo, AnalyzeTableStats, CheckTableConst
 from .get_table_infos import DescribeTableTool, ShowColumnsTool
 from .get_mysql_health import GetDBHealthRunning, GetDBHealthIndexUsage, GetProcessList
 from .switch_database import SwitchDatabase
-from .use_prompt_queryTableData import UsePromptQueryTableData
+from .use_prompt_query import UsePromptQueryTableData, TemplateQueryExecutor
 from .mysql_analyzer import AnalyzeQueryPerformance
+from .get_mysql_stats import CollectTableStats
 
 __all__ = [
     "ExecuteSQL",
@@ -27,5 +28,7 @@ __all__ = [
     "ShowCreateTableTool",
     "DescribeTableTool",
     "ShowColumnsTool",
-    "AnalyzeQueryPerformance"
+    "AnalyzeQueryPerformance",
+    "CollectTableStats",
+    "TemplateQueryExecutor"
 ]

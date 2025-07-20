@@ -222,14 +222,16 @@ class SQLParser:
         # 递归函数用于深入处理复杂的 SQL 结构
         def extract_from_token(token):
             if isinstance(token, sqlparse.sql.Identifier):
-                # 直接引用的表名
-                if token.get_real_name():
-                    tables.add(token.get_real_name())
+                # 直接引用的表名 - 修复点
+                table_name = token.value.strip('`')
+                if table_name:
+                    tables.add(table_name)
             elif isinstance(token, sqlparse.sql.IdentifierList):
                 # 多个表，如 FROM table1, table2
                 for identifier in token.get_identifiers():
-                    if identifier.get_real_name():
-                        tables.add(identifier.get_real_name())
+                    table_name = identifier.value.strip('`')
+                    if table_name:
+                        tables.add(table_name)
             elif isinstance(token, sqlparse.sql.Function):
                 # 处理子查询中的函数，可能包含表
                 for t in token.tokens:
