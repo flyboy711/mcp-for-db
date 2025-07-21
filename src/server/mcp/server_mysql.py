@@ -31,7 +31,7 @@ from starlette.middleware import Middleware
 resources_initialized = False
 
 # 初始化服务器
-app = Server("mcp_for_db")
+app = Server("mcp-for-db")
 logger = get_logger(__name__)
 
 

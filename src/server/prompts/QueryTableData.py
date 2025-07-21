@@ -1,13 +1,8 @@
-import logging
 from typing import Dict, Any
-from server.utils.logger import configure_logger, get_logger
 from mcp import GetPromptResult
 from mcp.types import Prompt, TextContent, PromptMessage, PromptArgument
 
 from server.prompts.BasePrompt import BasePrompt
-
-logger = get_logger(__name__)
-configure_logger(log_level=logging.INFO, log_filename="prompts.log")
 
 
 class QueryTableData(BasePrompt):
@@ -74,9 +69,6 @@ class QueryTableData(BasePrompt):
         else:
             desc = arguments["desc"]
             prompt += f"- task: {desc}。   "
-            logger.info(f"当前执行任务是：{desc}")
-
-        logger.info(f"当前提示词内容：{prompt}")
 
         return GetPromptResult(
             description="mysql prompt",

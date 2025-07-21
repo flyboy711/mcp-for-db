@@ -12,21 +12,23 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
 async def login_page(request: Request) -> HTMLResponse:
     """返回登录页面"""
     try:
         templates_dir = Path(__file__).parent.parent.parent / "templates"
         login_html = templates_dir / "login.html"
-        
+
         with open(login_html, "r", encoding="utf-8") as f:
             content = f.read()
-        
+
         return HTMLResponse(content)
     except Exception as e:
         return HTMLResponse(
             content=f"<h1>错误</h1><p>加载登录页面失败: {str(e)}</p>",
             status_code=500
         )
+
 
 async def login(request: Request) -> JSONResponse:
     """
@@ -53,7 +55,7 @@ async def login(request: Request) -> JSONResponse:
 
     try:
         data = await request.json()
-        
+
         # 验证授权类型
         grant_type = data.get("grant_type")
         if grant_type not in oauth_config.GRANT_TYPES:
@@ -61,26 +63,26 @@ async def login(request: Request) -> JSONResponse:
                 {"error": "unsupported_grant_type"},
                 status_code=400
             )
-            
+
         # 验证客户端凭据
         client_id = data.get("client_id")
         client_secret = data.get("client_secret")
-        
+
         if not client_id or not client_secret:
             return JSONResponse(
                 {"error": "invalid_client"},
                 status_code=401
             )
-            
+
         if client_id != oauth_config.CLIENT_ID or client_secret != oauth_config.CLIENT_SECRET:
             return JSONResponse(
                 {"error": "invalid_client"},
                 status_code=401
             )
-        
+
         if grant_type == "password":
             username = data.get("username")
-            #password = data.get("password")
+            # password = data.get("password")
 
             encrypted_password = data.get("password")  # 从前端接收的加密密码
 
@@ -122,15 +124,14 @@ async def login(request: Request) -> JSONResponse:
             # 第二次哈希：第一次哈希结果 + 时间戳
             expected_hash = hashlib.sha256((first_hash + timestamp).encode()).hexdigest()
 
-
             # 这里应该添加实际的用户验证逻辑
-            if username == os.getenv("OAUTH_USER_NAME", "admin") and encrypted_password == expected_hash :
+            if username == os.getenv("OAUTH_USER_NAME", "admin") and encrypted_password == expected_hash:
                 # 生成令牌
                 access_token, refresh_token, access_expires, refresh_expires = TokenHandler.create_tokens(
                     user_id="1",  # 这里应该是实际的用户ID
                     username=username
                 )
-                
+
                 # 返回标准的OAuth2.0响应
                 return JSONResponse(
                     TokenHandler.create_token_response(
@@ -140,12 +141,12 @@ async def login(request: Request) -> JSONResponse:
                         refresh_expires
                     )
                 )
-            
+
             return JSONResponse(
                 {"error": "invalid_grant"},
                 status_code=401
             )
-            
+
         elif grant_type == "refresh_token":
             refresh_token = data.get("refresh_token")
             if not refresh_token:
@@ -153,7 +154,7 @@ async def login(request: Request) -> JSONResponse:
                     {"error": "invalid_request"},
                     status_code=400
                 )
-                
+
             # 验证刷新令牌
             payload = TokenHandler.verify_token(refresh_token)
             if not payload or payload.get("type") != "refresh_token":
@@ -161,13 +162,13 @@ async def login(request: Request) -> JSONResponse:
                     {"error": "invalid_grant"},
                     status_code=401
                 )
-                
+
             # 生成新的令牌
             access_token, new_refresh_token, access_expires, refresh_expires = TokenHandler.create_tokens(
                 user_id=payload["sub"],
                 username=payload["username"]
             )
-            
+
             return JSONResponse(
                 TokenHandler.create_token_response(
                     access_token,
@@ -176,9 +177,9 @@ async def login(request: Request) -> JSONResponse:
                     refresh_expires
                 )
             )
-    
+
     except Exception as e:
         return JSONResponse(
             {"error": "server_error", "error_description": str(e)},
             status_code=500
-        ) 
+        )

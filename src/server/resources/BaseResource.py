@@ -6,7 +6,8 @@ from mcp.types import Resource
 from server.utils.logger import configure_logger, get_logger
 
 logger = get_logger(__name__)
-configure_logger(log_level=logging.INFO, log_filename="resources.log")
+configure_logger(log_filename="resources.log")
+logger.setLevel(logging.WARNING)  # 设置为WARNING级别（只显示WARNING及以上）
 
 
 class ResourceRegistry:

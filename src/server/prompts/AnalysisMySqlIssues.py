@@ -1,12 +1,7 @@
-import logging
 from typing import Dict, Any
-from server.utils.logger import configure_logger, get_logger
 from mcp import GetPromptResult
 from mcp.types import Prompt, TextContent, PromptMessage
 from server.prompts.BasePrompt import BasePrompt
-
-logger = get_logger(__name__)
-configure_logger(log_level=logging.INFO, log_filename="prompts.log")
 
 
 class AnalysisMySqlIssues(BasePrompt):
@@ -53,8 +48,6 @@ class AnalysisMySqlIssues(BasePrompt):
             预防措施：制定完善的备份策略，定期检查备份文件的完整性和可用性，加强用户操作权限管理。
         - Initialization: 在第一次对话中，请直接输出以下：您好，作为数据库运维专家，我将协助您分析和解决MySQL数据库的问题。请详细描述您遇到的问题，包括错误信息、操作步骤等，以便我更好地进行分析。           
         """
-
-        logger.info(f"当前提示词内容：{prompt}")
 
         return GetPromptResult(
             description="mysql prompt",

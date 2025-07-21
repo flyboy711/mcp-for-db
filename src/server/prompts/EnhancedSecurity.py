@@ -1,13 +1,7 @@
-import logging
 from typing import Dict, Any
 
 from mcp.types import TextContent, Prompt, PromptArgument, GetPromptResult, PromptMessage
 from server.prompts.BasePrompt import BasePrompt
-from server.utils.logger import configure_logger, get_logger
-
-logger = get_logger(__name__)
-configure_logger(log_level=logging.INFO, log_filename="prompts.log")
-
 
 class EnhancedSecurityPrompt(BasePrompt):
     name = "enhanced-security-prompt"

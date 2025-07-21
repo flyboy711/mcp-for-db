@@ -8,7 +8,8 @@ from server.tools.mysql.base import BaseHandler
 from server.tools.mysql import ExecuteSQL
 
 logger = get_logger(__name__)
-configure_logger(log_level=logging.INFO, log_filename="get_mysql_health.log")
+configure_logger(log_filename="tools.log")
+logger.setLevel(logging.WARNING)
 
 
 ########################################################################################################################

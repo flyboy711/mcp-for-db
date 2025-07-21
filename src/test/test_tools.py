@@ -3,7 +3,7 @@ import asyncio
 from server.config import SessionConfigManager, DatabaseManager
 from server.config.request_context import get_current_database_manager, RequestContext
 from server.tools.mysql.get_table_infos import GetDatabaseTables, GetTableDesc, GetDatabaseInfo, AnalyzeTableStats, \
-    DescribeTableTool, ShowCreateTableTool, ShowColumnsTool, CheckTableConstraints, GetTableLock
+    CheckTableConstraints, GetTableLock
 
 from server.tools.mysql import GetDBHealthRunning, SwitchDatabase, ExecuteSQL
 
@@ -24,24 +24,6 @@ async def main_tools():
         getDatabaseTables = GetDatabaseTables()
         ret = await getDatabaseTables.run_tool({
             "include_empty_comments": True,
-        })
-        print(ret)
-
-        showColumnsTool = ShowColumnsTool()
-        ret = await showColumnsTool.run_tool({
-            "table": "t_users",
-        })
-        print(ret)
-
-        showCreateTableTool = ShowCreateTableTool()
-        ret = await showCreateTableTool.run_tool({
-            "table": "t_users",
-        })
-        print(ret)
-
-        describeTableTool = DescribeTableTool()
-        ret = await describeTableTool.run_tool({
-            "table": "t_users",
         })
         print(ret)
 
@@ -77,11 +59,10 @@ async def main_switch_db(num: int = 1):
             tool = SwitchDatabase()
             arguments = {
                 "host": "localhost",
-                "port": "3306",
-                "user": "root",
+                "port": "13308",
+                "user": "videx",
                 "password": "password",
-                "database": "mcp_db",
-                "role": "admin"
+                "database": "tpch_tiny"
             }
             result = await tool.run_tool(arguments)
 
@@ -102,12 +83,11 @@ async def main_switch_db(num: int = 1):
 
             tool = SwitchDatabase()
             arguments = {
-                "host": "localhost",
-                "port": "13308",
-                "user": "videx",
-                "password": "password",
-                "database": "tpch_tiny",
-                "role": "admin"
+                "host": "rm-uf6pyrv408i5f0gap.mysql.rds.aliyuncs.com",
+                "port": "3306",
+                "user": "onedba",
+                "password": "S9dKSCsdJm(mKd2",
+                "database": "du_trade_timeout_db_3",
             }
             result = await tool.run_tool(arguments)
 
@@ -165,31 +145,31 @@ if __name__ == "__main__":
     #     "MYSQL_PASSWORD": "password",
     #     "MYSQL_DATABASE": "tpch_tiny"
     # })
-    session_config_1 = SessionConfigManager({
-        "MYSQL_HOST": "rm-uf6pyrv408i5f0gap.mysql.rds.aliyuncs.com",
-        "MYSQL_PORT": "3306",
-        "MYSQL_USER": "onedba",
-        "MYSQL_PASSWORD": "S9dKSCsdJm(mKd2",
-        "MYSQL_DATABASE": "du_trade_timeout_db_3"
-    })
-
-    # 创建数据库管理器
-    db_manager_1 = DatabaseManager(session_config_1)
-
-    # 设置请求上下文
-    with RequestContext(session_config_1, db_manager_1):
-        # asyncio.run(main_exe_sql(1))
-        # asyncio.run(main_tools())
-        asyncio.run(main_tools_err())
-        # asyncio.run(main_switch_db(1))
+    # session_config_1 = SessionConfigManager({
+    #     "MYSQL_HOST": "rm-uf6pyrv408i5f0gap.mysql.rds.aliyuncs.com",
+    #     "MYSQL_PORT": "3306",
+    #     "MYSQL_USER": "onedba",
+    #     "MYSQL_PASSWORD": "S9dKSCsdJm(mKd2",
+    #     "MYSQL_DATABASE": "du_trade_timeout_db_3"
+    # })
+    #
+    # # 创建数据库管理器
+    # db_manager_1 = DatabaseManager(session_config_1)
+    #
+    # # 设置请求上下文
+    # with RequestContext(session_config_1, db_manager_1):
+    #     asyncio.run(main_exe_sql(1))
+    #     # asyncio.run(main_tools())
+    #     # asyncio.run(main_tools_err())
+    #     # asyncio.run(main_switch_db(1))
 
     # 创建会话配置管理器
     session_config_2 = SessionConfigManager({
         "MYSQL_HOST": "localhost",
-        "MYSQL_PORT": "3306",
-        "MYSQL_USER": "root",
+        "MYSQL_PORT": "13308",
+        "MYSQL_USER": "videx",
         "MYSQL_PASSWORD": "password",
-        "MYSQL_DATABASE": "mcp_db"
+        "MYSQL_DATABASE": "tpch_tiny"
     })
 
     # 创建数据库管理器
@@ -197,7 +177,7 @@ if __name__ == "__main__":
 
     # 设置请求上下文
     with RequestContext(session_config_2, db_manager_2):
-        pass
         # asyncio.run(main_exe_sql(2))
         # asyncio.run(main_tools())
         # asyncio.run(main_switch_db(2))
+        asyncio.run(main_tools_err())

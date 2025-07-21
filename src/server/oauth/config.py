@@ -1,6 +1,4 @@
-from typing import Optional
 from pydantic_settings import BaseSettings
-from datetime import timedelta
 
 class OAuthConfig(BaseSettings):
     """OAuth配置类"""

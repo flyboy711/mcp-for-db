@@ -12,7 +12,8 @@ from server.tools.mysql.base import BaseHandler
 from server.config.request_context import get_current_database_manager
 
 logger = get_logger(__name__)
-configure_logger(log_level=logging.INFO, log_filename="execute_sql.log")
+configure_logger(log_filename="tools.log")
+logger.setLevel(logging.WARNING)
 
 
 @dataclass

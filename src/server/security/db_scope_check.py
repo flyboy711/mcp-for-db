@@ -2,8 +2,11 @@ import re
 import logging
 from typing import Set, List, Tuple, Dict, Any
 from server.config import SessionConfigManager, DatabaseAccessLevel
+from server.utils.logger import get_logger, configure_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
+configure_logger(log_filename="sql_security.log")
+logger.setLevel(logging.WARNING)
 
 
 class DatabaseScopeViolation(Exception):

@@ -3,12 +3,11 @@ import logging
 from logging.handlers import TimedRotatingFileHandler
 
 
-def configure_logger(log_filename="app.logs", log_level: int = logging.INFO):
+def configure_logger(log_filename="app.logs"):
     """配置日志系统
 
     Args:
         log_filename (str): 日志文件名
-        log_level (str): 日志级别 (DEBUG, INFO, WARNING, ERROR, CRITICAL)
     """
     # 获取当前文件所在目录的绝对路径
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -23,7 +22,6 @@ def configure_logger(log_filename="app.logs", log_level: int = logging.INFO):
 
     # 创建根日志记录器
     logger = logging.getLogger()
-    logger.setLevel(log_level)
 
     # 清除所有已有处理器
     for handler in logger.handlers[:]:

@@ -1,10 +1,12 @@
 import logging
 from typing import Tuple
-
 from server.config import SessionConfigManager
 from server.security.sql_parser import SQLParser
+from server.utils.logger import get_logger, configure_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
+configure_logger(log_filename="sql_security.log")
+logger.setLevel(logging.WARNING)
 
 
 class QueryLimiter:

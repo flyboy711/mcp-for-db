@@ -1,14 +1,17 @@
 import re
 import logging
-from typing import Dict, Any, Set, List, Optional
+from typing import Dict, Any, Optional
 import asyncio
 from server.config import SessionConfigManager
 from server.security.sql_parser import SQLParser
 from server.security.db_scope_check import DatabaseScopeChecker, DatabaseScopeViolation
 from server.security.sql_analyzer import SQLRiskAnalyzer
 from server.security.sql_analyzer import SQLRiskLevel
+from server.utils.logger import get_logger, configure_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
+configure_logger(log_filename="sql_security.log")
+logger.setLevel(logging.WARNING)
 
 
 class SecurityException(Exception):
@@ -124,7 +127,7 @@ class SQLInterceptor:
             raise SQLOperationException("SQL语句不能为空")
 
         # 检查SQL长度
-        max_length = self.session_config.get('MAX_SQL_LENGTH', 1000)
+        max_length = self.session_config.get('MAX_SQL_LENGTH', 2000)
         if len(sql_query) > max_length:
             raise SQLOperationException(
                 f"SQL语句长度({len(sql_query)})超出限制({max_length})",

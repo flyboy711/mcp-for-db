@@ -1,23 +1,24 @@
 import json
+import logging
 import re
-import numpy as np
-import pandas as pd
 from typing import Dict, Any, Sequence, Union, List
 from server.tools.mysql.base import BaseHandler
 from mcp import Tool
 from mcp.types import TextContent
-from server.utils.logger import get_logger
 from server.config.request_context import get_current_database_manager
 from server.tools.mysql import ExecuteSQL
+from server.utils.logger import get_logger, configure_logger
 
 logger = get_logger(__name__)
+configure_logger(log_filename="tools.log")
+logger.setLevel(logging.WARNING)
 
 
 class CollectTableStats(BaseHandler):
     """收集表的元数据、统计信息和数据分布情况的工具"""
     name = "collect_table_stats"
     description = (
-        "收集指定表的元数据、统计信息和数据分布情况（直方图、NDV等）"
+        "收集指定表的元数据、统计信息和数据分布情况（如NDV等）"
         "(Collects metadata, statistics, and data distribution information for specified tables)"
     )
 
@@ -477,88 +478,6 @@ class CollectTableStats(BaseHandler):
                 if distinct_count is not None:
                     table_distribution["column_distinct_counts"][column] = distinct_count
 
-            # 深层次分析：收集直方图统计
-            if deep_analysis and columns:
-                histograms = await self.collect_histograms(execute_sql, table, columns, bins)
-                table_distribution["histograms"] = histograms
-
             distribution[table] = table_distribution
 
         return distribution
-
-    async def collect_histograms(self, execute_sql: ExecuteSQL, table: str, columns: list, bins: int) -> dict:
-        """为表的所有列收集直方图数据"""
-        histograms = {}
-
-        # 一次性获取所有列的数据（减少查询次数）
-        columns_str = ", ".join([f"`{col}`" for col in columns])
-        data_query = f"SELECT {columns_str} FROM `{table}` LIMIT 1000"
-        data_result = await execute_sql.run_tool({"query": data_query})
-        data = self.parse_result(data_result)
-
-        # 如果没有有效数据，直接返回
-        if not data:
-            return {col: "无法获取数据" for col in columns}
-
-        # 转换为 DataFrame 以便处理
-        try:
-            df = pd.DataFrame(data)
-        except Exception as e:
-            logger.error(f"创建DataFrame失败: {str(e)}")
-            return {col: f"数据处理失败: {str(e)}" for col in columns}
-
-        # 为每列创建直方图
-        for column in columns:
-            try:
-                if column not in df.columns:
-                    histograms[column] = "列不存在"
-                    continue
-
-                series = df[column].dropna()
-
-                if series.empty:
-                    histograms[column] = "无有效数据"
-                    continue
-
-                # 数值类型处理
-                if pd.api.types.is_numeric_dtype(series):
-                    min_val = series.min()
-                    max_val = series.max()
-
-                    if min_val == max_val:
-                        histograms[column] = {
-                            "type": "single_value",
-                            "value": float(min_val),
-                            "count": len(series)
-                        }
-                    else:
-                        # 创建直方图
-                        hist, bin_edges = np.histogram(series, bins=bins)
-
-                        # 构建直方图数据
-                        histogram_data = []
-                        for i in range(len(hist)):
-                            bin_range = [float(bin_edges[i]), float(bin_edges[i + 1])]
-                            histogram_data.append({
-                                "bin_range": bin_range,
-                                "count": int(hist[i])
-                            })
-
-                        histograms[column] = {
-                            "type": "histogram",
-                            "data": histogram_data,
-                            "total": len(series)
-                        }
-                # 非数值类型处理
-                else:
-                    # 使用频数统计
-                    value_counts = series.value_counts().head(10)
-                    histograms[column] = {
-                        "type": "frequency",
-                        "data": value_counts.to_dict()
-                    }
-            except Exception as e:
-                logger.error(f"处理列 {column} 时出错: {str(e)}")
-                histograms[column] = f"处理失败: {str(e)}"
-
-        return histograms

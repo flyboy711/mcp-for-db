@@ -286,14 +286,14 @@ class SessionConfigManager:
 
         # 安全配置
         # 处理风险等级
-        risk_str = os.getenv('ALLOWED_RISK_LEVELS', '')
+        risk_str = os.getenv('ALLOWED_RISK_LEVELS', 'LOW')
         self.config['ALLOWED_RISK_LEVELS'] = self._parse_risk_levels(risk_str)
 
         self.config['ALLOW_SENSITIVE_INFO'] = self._parse_bool_env('ALLOW_SENSITIVE_INFO', False)
         self.config['MAX_SQL_LENGTH'] = self._parse_int_env('MAX_SQL_LENGTH', 1000)
 
         # 处理阻止模式
-        blocked_str = os.getenv('BLOCKED_PATTERNS', '')
+        blocked_str = os.getenv('BLOCKED_PATTERNS', 'DROP TABLE,DROP DATABASE,DELETE FROM')
         self.config['BLOCKED_PATTERNS'] = [
             p.strip().upper() for p in blocked_str.split(',') if p.strip()
         ]

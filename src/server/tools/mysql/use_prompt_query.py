@@ -4,14 +4,17 @@ from mcp.types import TextContent
 from server.tools.mysql import ExecuteSQL
 import logging
 from server.tools.mysql.base import BaseHandler
+from server.utils.logger import get_logger, configure_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
+configure_logger(log_filename="tools.log")
+logger.setLevel(logging.WARNING)
 
 
 class UsePromptQueryTableData(BaseHandler):
     name = "use_prompt_queryTableData"
     description = (
-        "查询表名，表字段，随后执行查询工具，（Retrieve data records from the database table.）"
+        "不知道表名和表字段时，优先使用该工具进行编排执行查询表名，表字段，随后执行查询工具，（Retrieve data records from the database table.）"
     )
 
     def get_tool_description(self) -> Tool:
@@ -20,9 +23,7 @@ class UsePromptQueryTableData(BaseHandler):
             description=self.description,
             inputSchema={
                 "type": "object",
-                "properties": {
-
-                }
+                "properties": {}
             }
         )
 

@@ -10,7 +10,8 @@ from server.config import RequestContext
 from server.utils.logger import get_logger, configure_logger
 
 logger = get_logger(__name__)
-configure_logger("test_resources.log", logging.DEBUG)
+configure_logger("test_resources.log")
+logger.setLevel(logging.DEBUG)
 
 
 async def test_resources():

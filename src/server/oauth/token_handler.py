@@ -21,7 +21,7 @@ class TokenHandler:
         # 计算过期时间
         access_token_expires = datetime.utcnow() + timedelta(minutes=oauth_config.ACCESS_TOKEN_EXPIRE_MINUTES)
         refresh_token_expires = datetime.utcnow() + timedelta(days=oauth_config.REFRESH_TOKEN_EXPIRE_DAYS)
-        
+
         # 访问令牌数据
         access_token_data = {
             "sub": str(user_id),  # subject (用户ID)
@@ -30,7 +30,7 @@ class TokenHandler:
             "exp": access_token_expires,
             "iat": datetime.utcnow()
         }
-        
+
         # 刷新令牌数据
         refresh_token_data = {
             "sub": str(user_id),
@@ -39,22 +39,22 @@ class TokenHandler:
             "exp": refresh_token_expires,
             "iat": datetime.utcnow()
         }
-        
+
         # 生成令牌
         access_token = jwt.encode(
             access_token_data,
             oauth_config.TOKEN_SECRET_KEY,
             algorithm=oauth_config.TOKEN_ALGORITHM
         )
-        
+
         refresh_token = jwt.encode(
             refresh_token_data,
             oauth_config.TOKEN_SECRET_KEY,
             algorithm=oauth_config.TOKEN_ALGORITHM
         )
-        
+
         return access_token, refresh_token, access_token_expires, refresh_token_expires
-    
+
     @staticmethod
     def verify_token(token: str) -> Optional[Dict]:
         """
@@ -75,13 +75,13 @@ class TokenHandler:
             return payload
         except jwt.InvalidTokenError:
             return None
-    
+
     @staticmethod
     def create_token_response(
-        access_token: str,
-        refresh_token: str,
-        access_token_expires: datetime,
-        refresh_token_expires: datetime
+            access_token: str,
+            refresh_token: str,
+            access_token_expires: datetime,
+            refresh_token_expires: datetime
     ) -> Dict:
         """
         创建标准的OAuth2.0令牌响应
@@ -98,7 +98,7 @@ class TokenHandler:
         # 转换为北京时间 (UTC+8)
         access_token_expires_beijing = access_token_expires + timedelta(hours=8)
         refresh_token_expires_beijing = refresh_token_expires + timedelta(hours=8)
-        
+
         return {
             "access_token": access_token,
             "token_type": "bearer",
@@ -107,4 +107,4 @@ class TokenHandler:
             "refresh_token_expires_in": oauth_config.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,  # 秒
             "expire_time": access_token_expires_beijing.strftime("%Y-%m-%d %H:%M:%S (北京时间)"),
             "refresh_token_expire_time": refresh_token_expires_beijing.strftime("%Y-%m-%d %H:%M:%S (北京时间)")
-        } 
+        }

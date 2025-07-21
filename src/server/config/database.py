@@ -1,4 +1,5 @@
 import logging
+
 import aiomysql
 import asyncio
 import hashlib
@@ -6,7 +7,6 @@ import time
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator, Optional, Dict, Any, List, Union
 from enum import Enum
-
 from server.config import SessionConfigManager
 from server.security.sql_interceptor import SQLInterceptor, SecurityException
 from server.security.sql_parser import SQLParser
@@ -15,7 +15,8 @@ from server.security.db_scope_check import DatabaseScopeChecker, DatabaseScopeVi
 from server.utils.logger import get_logger, configure_logger
 
 logger = get_logger(__name__)
-configure_logger(log_level=logging.INFO, log_filename="database.log")
+configure_logger(log_filename="database.log")
+logger.setLevel(logging.WARNING)
 
 
 class DatabaseConnectionState(Enum):

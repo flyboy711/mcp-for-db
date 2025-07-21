@@ -10,7 +10,8 @@ from server.tools.mysql import ExecuteSQL
 from server.utils.logger import get_logger, configure_logger
 
 logger = get_logger(__name__)
-configure_logger(log_level=logging.INFO, log_filename="database.log")
+configure_logger(log_filename="tools.log")
+logger.setLevel(logging.WARNING)
 
 
 class SlowQueryAnalyzer(BaseHandler):

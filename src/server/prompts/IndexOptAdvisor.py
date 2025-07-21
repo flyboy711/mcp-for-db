@@ -1,12 +1,7 @@
-import logging
 from typing import Dict, Any
-from server.utils.logger import configure_logger, get_logger
 from mcp import GetPromptResult
 from mcp.types import Prompt, TextContent, PromptMessage, PromptArgument
 from server.prompts.BasePrompt import BasePrompt
-
-logger = get_logger(__name__)
-configure_logger(log_level=logging.INFO, log_filename="index_advisor_prompt.log")
 
 
 class IndexOptimizationAdvisorPrompt(BasePrompt):
@@ -171,9 +166,6 @@ class IndexOptimizationAdvisorPrompt(BasePrompt):
         - 预估性能提升
         - 实施注意事项
         """
-
-        logger.info(f"生成索引优化提示词，查询长度: {len(query)} 字符")
-        logger.debug(f"提示词内容: {prompt[:500]}...")
 
         return GetPromptResult(
             description="MySQL索引优化顾问提示词",

@@ -8,6 +8,7 @@
 
 本服务提供自然语言操作数据库的功能，让您直接使用自然语言实现对数据库操作的需求，比如描述查询需求，分析数据库健康状态，分析复杂SQL语句，慢查询等，但是做了鉴权哦，没有权限是会执行失败的。
 同时，本服务允许多用户隔离的操作想要操作的数据库并提供切换数据库连接的工具哦。
+
 具体的，项目在原先具备的功能上添加了如下功能：
 
 - 数据库侧的连接池优化
@@ -16,14 +17,14 @@
 - 支持 资源暴露接口的可扩展定制
 - 支持 获取数据库基本信息
 - 支持 获取数据库所有表和对应的表注释
-- 支持 分析表统计信息和列统计信息
+- 支持 获取表统计信息和列统计信息
 - 支持 检查表约束信息
-- 支持 获取表的创建语句
 - 支持 获取当前进程列表
 - 支持 动态切换数据库连接配置
 - 支持 分析SQL查询的性能特征，包括执行时间、资源使用等
 - 支持 分析SQL查询语句，基于数据库元数据和统计信息推荐索引方案
 - 支持 慢查询分析
+- 支持 模版参数化查询
 
 ## 工具列表
 
@@ -38,15 +39,13 @@
 | analyze_table_stats       | 分析表统计信息和列统计信息                                                  |
 | check_table_constraints   | 检查表约束信息                                                        |
 | get_table_lock            | 获取当前 MySQL 服务器行级锁、表级锁情况                                        |
-| mysql_show_columns        | 获取表的列信息                                                        |
-| mysql_show_create_table   | 获取表的创建语句                                                       |
 | get_db_health_running     | 获取当前 MySQL 的健康状态                                               |
 | get_db_health_index_usage | 获取当前连接的MySQL库的索引使用情况,包含冗余索引情况、性能较差的索引情况、未使用索引且查询时间大于30秒top10情况 |
 | get_process_list          | 获取当前进程列表                                                       |
 | switch_database           | 动态切换数据库连接配置                                                    |
 | analyze_query_performance | 分析SQL查询的性能特征，包括执行时间、资源使用等                                      |
-|                           |
-|                           |
+| collect_table_stats       | 收集指定表的元数据、统计信息和数据分布情况（直方图、NDV等）                                |                            
+| template_query_executor   | 执行模板化查询任务，支持Top N查询、特定条件查询、聚合查询等常见模式                           |                           
 
 部分工具还在测试中。。。
 
@@ -100,10 +99,10 @@ uv pip install -r requirements.txt
 uv run -m server.mcp.server_mysql
 
 # 自定义env文件位置
-uv run -m mysql_mcp_server_pro.server --mode sse --envfile /path/to/.env
+uv run -m server.mcp.server_mysql --mode sse --envfile /path/to/.env
 
 # 启动oauth认证
-uv run -m mysql_mcp_server_pro.server --oauth true
+uv run -m server.mcp.server_mysql --oauth true
 ```
 
 VSCode 中安装 Cline 插件并配置 JSON 文件：

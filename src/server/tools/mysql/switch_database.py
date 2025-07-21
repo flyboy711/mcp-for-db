@@ -10,7 +10,8 @@ from server.utils.logger import get_logger, configure_logger
 from server.config.request_context import get_current_session_config, get_current_database_manager
 
 logger = get_logger(__name__)
-configure_logger(log_level=logging.INFO, log_filename="switch_database.log")
+configure_logger(log_filename="switch_database.log")
+logger.setLevel(logging.WARNING)
 
 
 async def _reinitialize_db_pool(db_manager) -> None:
@@ -45,10 +46,9 @@ class SwitchDatabase(BaseHandler):
                     "port": {"type": "integer", "description": "数据库端口"},
                     "user": {"type": "string", "description": "数据库用户名"},
                     "password": {"type": "string", "description": "数据库密码"},
-                    "database": {"type": "string", "description": "数据库名称"},
-                    "role": {"type": "string", "description": "数据库角色（admin/readonly）"}
+                    "database": {"type": "string", "description": "数据库名称"}
                 },
-                "required": ["host", "port", "user", "password", "database", "role"]
+                "required": ["host", "port", "user", "password", "database"]
             }
         )
 
@@ -76,8 +76,7 @@ class SwitchDatabase(BaseHandler):
                 "MYSQL_PORT": arguments["port"],
                 "MYSQL_USER": arguments["user"],
                 "MYSQL_PASSWORD": arguments["password"],
-                "MYSQL_DATABASE": arguments["database"],
-                "MYSQL_ROLE": arguments["role"]
+                "MYSQL_DATABASE": arguments["database"]
             }
 
             # 更新会话配置
@@ -121,10 +120,5 @@ class SwitchDatabase(BaseHandler):
         database = arguments.get("database", "")
         if not database or len(database) > self.MAX_DBNAME_LENGTH:
             errors.append("数据库名称无效")
-
-        # 角色验证
-        role = arguments.get("role", "").lower()
-        if role not in ("admin", "readonly"):
-            errors.append("角色无效（必须是admin或readonly）")
 
         return ", ".join(errors)

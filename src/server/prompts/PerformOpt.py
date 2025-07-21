@@ -1,12 +1,7 @@
-import logging
 from typing import Dict, Any
 
 from mcp.types import TextContent, Prompt, PromptArgument, GetPromptResult, PromptMessage
 from server.prompts.BasePrompt import BasePrompt
-from server.utils.logger import configure_logger, get_logger
-
-logger = get_logger(__name__)
-configure_logger(log_level=logging.INFO, log_filename="prompts.log")
 
 
 class PerformanceOptimizationPrompt(BasePrompt):
@@ -30,8 +25,6 @@ class PerformanceOptimizationPrompt(BasePrompt):
     async def run_prompt(self, arguments: Dict[str, Any]) -> GetPromptResult:
         task = arguments.get("task", "")
 
-        logger.info(f"当前执行任务是：{task}")
-
         prompt = f"""
         - Role: 数据库性能优化专家和自动化工程师
         - Background: 用户需要对 MySQL 数据库进行性能优化与自动化，包括慢查询治理、智能索引管理等功能。
@@ -47,8 +40,6 @@ class PerformanceOptimizationPrompt(BasePrompt):
         - Initialization: 在第一次对话中，请直接输出以下：您好，作为数据库性能优化专家，我将协助您实现数据库性能优化与自动化功能。请详细描述您需要执行的任务，以便我更好地进行处理。
         - Task: {task}
         """
-
-        logger.info(f"当前提示词内容：{prompt}")
 
         return GetPromptResult(
             description="performance optimization prompt",
