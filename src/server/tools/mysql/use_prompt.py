@@ -3,6 +3,7 @@ from mcp import Tool
 from mcp.types import TextContent
 import logging
 
+from server.tools.mysql.base import BaseHandler
 from server.common import VectorCacheManager
 from server.prompts.tools_prompts import MonitoringPromptGenerator
 from server.utils.logger import get_logger, configure_logger
@@ -14,7 +15,7 @@ logger.setLevel(logging.WARNING)
 
 ########################################################################################################################
 ########################################################################################################################
-class DynamicQueryPrompt:
+class DynamicQueryPrompt(BaseHandler):
     """动态提示词编排器 - 使用向量化相似度匹配"""
     name = "dynamic_query_prompt"
     description = "通过动态参数生成提示词模板，支持告警/隐患/性能监控的智能查询服务"

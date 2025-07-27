@@ -6,22 +6,45 @@ from typing import Dict, Any, Optional, List, Tuple
 from pathlib import Path
 import logging
 from sentence_transformers import SentenceTransformer
+from server.utils.logger import get_logger, configure_logger
 from sklearn.metrics.pairwise import cosine_similarity
+import os
+import threading
 
 # 配置日志
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
+configure_logger(log_filename="sql_tools.log")
+logger.setLevel(logging.WARNING)
 
 
 class VectorCacheManager:
-    """向量化缓存: 使用句子嵌入进行相似度匹配"""
+    """向量缓存管理器"""
     CACHE_DIR = Path(__file__).parent.parent.parent.parent / "files/vector_cache"
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-    # 预加载嵌入模型
-    EMBEDDING_MODEL = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+    # 使用更轻量级的模型
+    MODEL_NAME = "sentence-transformers/paraphrase-MiniLM-L6-v2"
+
+    # 延迟加载模型
+    _embedding_model = None
+    _model_lock = threading.Lock()
 
     # 相似度阈值
     SIMILARITY_THRESHOLD = 0.85
+
+    # 嵌入维度
+    EMBEDDING_DIM = 384  # MiniLM-L6模型的维度
+
+    @classmethod
+    def _get_embedding_model(cls):
+        """线程安全的模型加载"""
+        if cls._embedding_model is None:
+            with cls._model_lock:
+                if cls._embedding_model is None:
+                    logger.info("正在加载嵌入模型...")
+                    cls._embedding_model = SentenceTransformer(cls.MODEL_NAME)
+                    logger.info("嵌入模型加载完成")
+        return cls._embedding_model
 
     @classmethod
     def _get_cache_file_path(cls, query_hash: str) -> Path:
@@ -36,7 +59,8 @@ class VectorCacheManager:
     @classmethod
     def _get_query_embedding(cls, text: str) -> np.ndarray:
         """获取查询的嵌入向量"""
-        return cls.EMBEDDING_MODEL.encode([text], convert_to_numpy=True)[0]
+        model = cls._get_embedding_model()
+        return model.encode([text], convert_to_numpy=True)[0]
 
     @classmethod
     def save_params(cls, user_query: str, parsed_params: Dict[str, Any], prompt_text: str) -> str:
@@ -55,8 +79,12 @@ class VectorCacheManager:
         }
 
         # 保存到文件
-        with open(cache_file, 'w', encoding='utf-8') as f:
-            json.dump(cache_data, f, ensure_ascii=False, indent=2)
+        try:
+            with open(cache_file, 'w', encoding='utf-8') as f:
+                json.dump(cache_data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.error(f"保存缓存文件失败: {str(e)}")
+            return ""
 
         # 更新嵌入索引
         cls._update_embedding_index(query_hash, cache_data["embedding"])
@@ -83,8 +111,13 @@ class VectorCacheManager:
 
         # 保存更新后的索引
         try:
-            with open(index_file, 'w', encoding='utf-8') as f:
+            # 使用临时文件确保原子写入
+            temp_file = index_file.with_suffix(".tmp")
+            with open(temp_file, 'w', encoding='utf-8') as f:
                 json.dump(index_data, f, ensure_ascii=False, indent=2)
+
+            # 原子替换文件
+            os.replace(temp_file, index_file)
         except Exception as e:
             logger.error(f"保存嵌入索引失败: {str(e)}")
 
@@ -106,7 +139,11 @@ class VectorCacheManager:
     def find_similar_query(cls, current_query: str) -> Optional[Tuple[str, Dict]]:
         """使用向量相似度查找相似的历史查询"""
         # 获取当前查询的嵌入向量
-        current_embedding = cls._get_query_embedding(current_query)
+        try:
+            current_embedding = cls._get_query_embedding(current_query)
+        except Exception as e:
+            logger.error(f"获取查询嵌入失败: {str(e)}")
+            return None
 
         # 加载嵌入索引
         index_file = cls._get_embedding_file_path()
@@ -131,11 +168,28 @@ class VectorCacheManager:
             embeddings.append(embedding)
             hashes.append(query_hash)
 
+        # 检查嵌入维度是否一致
+        if len(embeddings) > 0 and len(embeddings[0]) != cls.EMBEDDING_DIM:
+            logger.warning(f"嵌入维度不匹配: 预期 {cls.EMBEDDING_DIM}, 实际 {len(embeddings[0])}")
+            return None
+
+        # 转换列表为NumPy数组
+        try:
+            embeddings_array = np.array(embeddings, dtype=np.float32)
+            current_embedding_array = np.array([current_embedding], dtype=np.float32)
+        except Exception as e:
+            logger.error(f"创建NumPy数组失败: {str(e)}")
+            return None
+
         # 计算相似度
-        similarities = cosine_similarity(
-            [current_embedding],
-            embeddings
-        )[0]
+        try:
+            similarities = cosine_similarity(
+                current_embedding_array,
+                embeddings_array
+            )[0]
+        except Exception as e:
+            logger.error(f"计算相似度失败: {str(e)}")
+            return None
 
         # 找到最相似的条目
         best_idx = np.argmax(similarities)
@@ -157,3 +211,8 @@ class VectorCacheManager:
 
         logger.info(f"找到相似查询: {best_hash} (相似度: {best_similarity:.4f})")
         return best_hash, cache_data
+
+    @classmethod
+    def preload_model(cls):
+        """预加载模型（可选）"""
+        cls._get_embedding_model()
