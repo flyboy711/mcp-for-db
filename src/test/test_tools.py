@@ -2,10 +2,10 @@ import asyncio
 
 from server.config import SessionConfigManager, DatabaseManager
 from server.config.request_context import get_current_database_manager, RequestContext
-from server.tools.mysql.get_table_infos import GetDatabaseTables, GetTableDesc, GetDatabaseInfo, AnalyzeTableStats, \
+from server.tools.mysql.get_table_infos import GetDatabaseTables, GetTableDesc, GetDatabaseInfo, GetTableStats, \
     CheckTableConstraints, GetTableLock
 
-from server.tools.mysql import GetDBHealthRunning, SwitchDatabase, ExecuteSQL
+from server.tools.mysql import GetDBHealthRunning, SwitchDatabase, ExecuteSQL, DynamicQueryPrompt
 
 
 async def main_tools():
@@ -27,7 +27,7 @@ async def main_tools():
         })
         print(ret)
 
-        analyzeTableStats = AnalyzeTableStats()
+        analyzeTableStats = GetTableStats()
         ret = await analyzeTableStats.run_tool({
             "table_name": "t_users",
         })
@@ -136,6 +136,27 @@ async def main_tools_err():
         await get_current_database_manager().close_pool()
 
 
+async def test_main_use_prompt_tools():
+    try:
+        ret = DynamicQueryPrompt()
+        # 用户查询
+        user_query = "查询最近7天的Top20 CPU使用率，按峰值排序，业务域为支付"
+
+        # 大模型解析的参数
+        parsed_params = {
+            "monitor_type": "CPU",
+            "time_range": "最近7天",
+            "top_k": 20,
+            "filters": ["业务域=支付"],
+            "sort_by": "峰值 DESC"
+        }
+        ret = await ret.run_tool({"user_query": user_query, "parsed_params": parsed_params})
+        print(ret)
+
+    finally:
+        await get_current_database_manager().close_pool()
+
+
 if __name__ == "__main__":
     # 创建会话配置管理器
     # session_config_1 = SessionConfigManager({
@@ -145,39 +166,40 @@ if __name__ == "__main__":
     #     "MYSQL_PASSWORD": "password",
     #     "MYSQL_DATABASE": "tpch_tiny"
     # })
-    # session_config_1 = SessionConfigManager({
-    #     "MYSQL_HOST": "rm-uf6pyrv408i5f0gap.mysql.rds.aliyuncs.com",
-    #     "MYSQL_PORT": "3306",
-    #     "MYSQL_USER": "onedba",
-    #     "MYSQL_PASSWORD": "S9dKSCsdJm(mKd2",
-    #     "MYSQL_DATABASE": "du_trade_timeout_db_3"
-    # })
-    #
-    # # 创建数据库管理器
-    # db_manager_1 = DatabaseManager(session_config_1)
-    #
-    # # 设置请求上下文
-    # with RequestContext(session_config_1, db_manager_1):
-    #     asyncio.run(main_exe_sql(1))
-    #     # asyncio.run(main_tools())
-    #     # asyncio.run(main_tools_err())
-    #     # asyncio.run(main_switch_db(1))
-
-    # 创建会话配置管理器
-    session_config_2 = SessionConfigManager({
-        "MYSQL_HOST": "localhost",
-        "MYSQL_PORT": "13308",
-        "MYSQL_USER": "videx",
-        "MYSQL_PASSWORD": "password",
-        "MYSQL_DATABASE": "tpch_tiny"
+    session_config_1 = SessionConfigManager({
+        "MYSQL_HOST": "rm-uf6pyrv408i5f0gap.mysql.rds.aliyuncs.com",
+        "MYSQL_PORT": "3306",
+        "MYSQL_USER": "onedba",
+        "MYSQL_PASSWORD": "S9dKSCsdJm(mKd2",
+        "MYSQL_DATABASE": "du_trade_timeout_db_3"
     })
 
     # 创建数据库管理器
-    db_manager_2 = DatabaseManager(session_config_2)
+    db_manager_1 = DatabaseManager(session_config_1)
 
     # 设置请求上下文
-    with RequestContext(session_config_2, db_manager_2):
-        # asyncio.run(main_exe_sql(2))
+    with RequestContext(session_config_1, db_manager_1):
+        asyncio.run(test_main_use_prompt_tools())
+        # asyncio.run(main_exe_sql(1))
         # asyncio.run(main_tools())
-        # asyncio.run(main_switch_db(2))
-        asyncio.run(main_tools_err())
+        # asyncio.run(main_tools_err())
+        # asyncio.run(main_switch_db(1))
+
+    # 创建会话配置管理器
+    # session_config_2 = SessionConfigManager({
+    #     "MYSQL_HOST": "localhost",
+    #     "MYSQL_PORT": "13308",
+    #     "MYSQL_USER": "videx",
+    #     "MYSQL_PASSWORD": "password",
+    #     "MYSQL_DATABASE": "tpch_tiny"
+    # })
+    #
+    # # 创建数据库管理器
+    # db_manager_2 = DatabaseManager(session_config_2)
+    #
+    # # 设置请求上下文
+    # with RequestContext(session_config_2, db_manager_2):
+    #     # asyncio.run(main_exe_sql(2))
+    #     # asyncio.run(main_tools())
+    #     # asyncio.run(main_switch_db(2))
+    #     asyncio.run(main_tools_err())

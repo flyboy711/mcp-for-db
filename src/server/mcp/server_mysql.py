@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import logging
 import os
 from collections.abc import AsyncIterator
 from dotenv import load_dotenv
@@ -17,11 +18,13 @@ from starlette.routing import Route, Mount
 from starlette.types import Scope, Receive, Send
 from server.config import SessionConfigManager
 from server.config.database import DatabaseManager
+from server.config.dbconfig import EnvFileManager
 from server.config.request_context import RequestContext
-from server.oauth import OAuthMiddleware, login, login_page
+from server.resources import QueryLogResource
 from server.tools.mysql.base import ToolRegistry
-from server.prompts.BasePrompt import PromptRegistry
-from server.resources.BaseResource import ResourceRegistry
+from server.prompts.base import PromptRegistry
+from server.resources.base import ResourceRegistry
+from server.oauth import OAuthMiddleware, login, login_page
 
 # 导入日志配置工具
 from server.utils.logger import configure_logger, get_logger
@@ -33,6 +36,7 @@ resources_initialized = False
 # 初始化服务器
 app = Server("mcp-for-db")
 logger = get_logger(__name__)
+logger.setLevel(logging.INFO)
 
 
 async def initialize_global_resources():
@@ -47,7 +51,8 @@ async def initialize_global_resources():
     try:
         # 注意：这里不再初始化全局数据库连接池,每个请求会有自己的数据库管理器
 
-        # 其他全局资源初始化: 比如日志资源、数据库白皮书资源，这部分先暴露出来，功能待定
+        # 其他全局资源初始化: 比如日志资源、数据库白皮书资源
+        QueryLogResource.start_flush_thread()
 
         logger.info("所有资源初始化完成")
         resources_initialized = True
@@ -67,7 +72,7 @@ async def close_global_resources():
     logger.info("开始关闭所有资源")
     try:
         # 关闭其他全局资源
-        pass
+        QueryLogResource.stop_flush_thread()
     except Exception as e:
         logger.exception(f"关闭资源时出错: {str(e)}")
     finally:
@@ -408,13 +413,12 @@ def main(mode, envfile, oauth):
 
     # 获取当前文件所在目录的绝对路径
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    # 获取项目根目录
+    # 获取项目 server 目录
     server_dir = os.path.dirname(current_dir)
-
+    # 获取项目根目录
+    root_dir = os.path.dirname(os.path.dirname(server_dir))
     # 配置日志
-    configure_logger(
-        log_filename="mcp_server.log"
-    )
+    configure_logger(log_filename="mcp_server.log")
 
     logger.info("=" * 60)
     logger.info("开始启动MySQL MCP服务器")
@@ -422,29 +426,44 @@ def main(mode, envfile, oauth):
     # 创建全局默认会话配置
     global_default_session_config = SessionConfigManager()
 
-    # 先尝试加载默认环境变量文件
+    # 先尝试加载根目录文件中的环境变量是否有新的配置（用户配置的），如果有则获取值更新到默认环境文件中
+    env_path_root = os.path.join(root_dir, ".env")
     env_path = os.path.join(server_dir, "config", ".env")
-    logger.info(f"尝试加载默认环境变量文件: {env_path}")
-    if os.path.exists(env_path):
-        # 加载环境变量文件
+    if os.path.exists(env_path_root):
+        # 加载根目录用户配置的环境变量
+        load_dotenv(env_path_root)
+        logger.info(f"尝试加载根目录中用户配置的环境变量文件: {env_path_root}")
+        # 将用户定义的环境变量更新到默认的环境变量文件中
+        updates = {
+            "MYSQL_HOST": os.environ.get("MYSQL_HOST"),
+            "MYSQL_PORT": os.environ.get("MYSQL_PORT"),
+            "MYSQL_USER": os.environ.get("MYSQL_USER"),
+            "MYSQL_PASSWORD": os.environ.get("MYSQL_PASSWORD"),
+            "MYSQL_DATABASE": os.environ.get("MYSQL_DATABASE"),
+        }
+        EnvFileManager.update(updates, env_path)
+
         load_dotenv(env_path)
         # 更新全局默认会话配置
-        global_default_session_config.update_from_env()
-        logger.info("默认环境变量文件已加载到全局默认配置")
-    else:
-        logger.warning("未找到默认环境变量文件，将使用系统环境变量")
-        # 从系统环境变量更新配置
-        global_default_session_config.update_from_env()
+        global_default_session_config.update(updates)
+        logger.info("用户配置的环境变量已加载到全局默认配置中并更新到默认位置")
 
-    # 再看用户是否指定了env文件
+    # 再看服务启动时是否指定了env文件
     if envfile:
-        logger.info(f"加载环境变量文件: {envfile}")
+        logger.info(f"加载服务启动时指定的环境变量文件: {envfile}")
         if os.path.exists(envfile):
-            # 加载环境变量文件
             load_dotenv(envfile)
+            updates_env = {
+                "MYSQL_HOST": os.environ.get("MYSQL_HOST"),
+                "MYSQL_PORT": os.environ.get("MYSQL_PORT"),
+                "MYSQL_USER": os.environ.get("MYSQL_USER"),
+                "MYSQL_PASSWORD": os.environ.get("MYSQL_PASSWORD"),
+                "MYSQL_DATABASE": os.environ.get("MYSQL_DATABASE"),
+            }
+            EnvFileManager.update(updates_env, env_path)
             # 更新全局默认会话配置
-            global_default_session_config.update_from_env()
-            logger.info("环境变量文件已加载到全局默认配置")
+            global_default_session_config.update(updates_env)
+            logger.info("服务启动时指定的环境变量文件已加载到全局默认配置并更新到默认文件中")
         else:
             logger.warning(f"指定的环境文件不存在: {envfile}")
 

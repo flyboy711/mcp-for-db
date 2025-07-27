@@ -10,7 +10,7 @@ from server.utils.logger import get_logger, configure_logger
 from server.config.request_context import get_current_session_config, get_current_database_manager
 
 logger = get_logger(__name__)
-configure_logger(log_filename="switch_database.log")
+configure_logger(log_filename="sql_tools.log")
 logger.setLevel(logging.WARNING)
 
 
@@ -54,6 +54,7 @@ class SwitchDatabase(BaseHandler):
 
     async def run_tool(self, arguments: Dict[str, Any]) -> Sequence[TextContent]:
         """切换数据库连接配置"""
+        global session_config, current_config
         try:
             # 获取会话配置管理器
             session_config = get_current_session_config()
@@ -69,6 +70,15 @@ class SwitchDatabase(BaseHandler):
             errors = self._validate_input(arguments)
             if errors:
                 return [TextContent(type="text", text=f"输入验证失败: {errors}")]
+
+            # 保存当前配置（用于回滚）
+            current_config = {
+                "MYSQL_HOST": session_config.get("MYSQL_HOST", "localhost"),
+                "MYSQL_PORT": session_config.get("MYSQL_PORT", "3306"),
+                "MYSQL_USER": session_config.get("MYSQL_USER", ""),
+                "MYSQL_PASSWORD": session_config.get("MYSQL_PASSWORD", ""),
+                "MYSQL_DATABASE": session_config.get("MYSQL_DATABASE", "")
+            }
 
             # 准备新配置
             new_config = {
@@ -90,6 +100,8 @@ class SwitchDatabase(BaseHandler):
 
         except Exception as e:
             logger.error(f"切换数据库失败: {str(e)}")
+            session_config.update(current_config)
+            logger.info("配置已回滚到之前状态")
             return [TextContent(type="text", text=f"切换数据库失败: {str(e)}")]
 
     def _validate_input(self, arguments: Dict[str, Any]) -> str:

@@ -68,20 +68,20 @@ class DatabaseManager:
 
         logger.info("数据库管理器初始化完成")
 
-    def __del__(self):
-        """析构函数，确保连接池被关闭"""
-        if self._pool and not self._pool.closed:
-            try:
-                # 尝试同步关闭连接池
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    loop.create_task(self.close_pool())
-                else:
-                    loop.run_until_complete(self.close_pool())
-            except Exception:
-                # 如果事件循环不可用，直接关闭
-                self._pool.close()
-                logger.warning("在析构函数中强制关闭连接池")
+    # def __del__(self):
+    #     """析构函数，确保连接池被关闭"""
+    #     if self._pool and not self._pool.closed:
+    #         try:
+    #             # 尝试同步关闭连接池
+    #             loop = asyncio.get_event_loop()
+    #             if loop.is_running():
+    #                 loop.create_task(self.close_pool())
+    #             else:
+    #                 loop.run_until_complete(self.close_pool())
+    #         except Exception:
+    #             # 如果事件循环不可用，直接关闭
+    #             self._pool.close()
+    #             logger.warning("在析构函数中强制关闭连接池")
 
     @property
     def state(self) -> DatabaseConnectionState:
@@ -341,7 +341,10 @@ class DatabaseManager:
             logger.exception(f"获取数据库连接时发生未预期错误: {str(e)}")
             raise
 
-    #############################################################################################
+    ###################################################################################################################
+    ###################################################################################################################
+    ###################################################################################################################
+    ###################################################################################################################
     async def execute_query(self, sql_query: str, params: Optional[Dict[str, Any]] = None,
                             require_database: bool = True, stream_results: bool = False,
                             batch_size: int = 1000) -> Union[
@@ -445,6 +448,9 @@ class DatabaseManager:
             execution_time = time.time() - start_time
             self._log_query_performance(sql_query, execution_time)
 
+    ###################################################################################################################
+    ###################################################################################################################
+    ###################################################################################################################
     async def _stream_results(self, cursor: aiomysql.Cursor, batch_size: int,
                               sql_query: str, operation: str) -> AsyncGenerator[List[Dict[str, Any]], None]:
         """

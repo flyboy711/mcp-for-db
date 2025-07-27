@@ -1,5 +1,4 @@
 import asyncio
-import logging
 import os
 
 from dotenv import load_dotenv
@@ -7,11 +6,6 @@ from server.config import SessionConfigManager, DatabaseManager
 from server.config.request_context import get_current_database_manager
 from server.mcp.server_mysql import handle_get_resources, handle_read_resource
 from server.config import RequestContext
-from server.utils.logger import get_logger, configure_logger
-
-logger = get_logger(__name__)
-configure_logger("test_resources.log")
-logger.setLevel(logging.DEBUG)
 
 
 async def test_resources():
@@ -27,7 +21,7 @@ async def test_resources():
             print(f"{i}. {res.name} ({res.uri})")
 
         # 测试读取第一个资源
-        first_resource = resources[0]
+        first_resource = resources[-1]
         print(f"\n读取资源: {first_resource.uri}")
         content = await handle_read_resource(first_resource.uri)
         print(f"\n资源内容片段:\n{content[:500]}...")

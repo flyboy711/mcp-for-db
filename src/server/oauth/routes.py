@@ -5,12 +5,8 @@ import time
 from starlette.responses import JSONResponse, HTMLResponse
 from starlette.requests import Request
 from pathlib import Path
-
-from .token_handler import TokenHandler
-from .config import oauth_config
-from dotenv import load_dotenv
-
-load_dotenv()
+from server.oauth.token_handler import TokenHandler
+from server.oauth.config import oauth_config
 
 
 async def login_page(request: Request) -> HTMLResponse:

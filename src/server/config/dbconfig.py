@@ -195,9 +195,6 @@ class SessionConfigManager:
     def _update_hash(self) -> None:
         self._config_hash = hashlib.md5(str(self.config).encode('utf-8')).hexdigest()
 
-    def update_from_env(self) -> None:
-        self._load_from_env()
-
     def _parse_int_env(self, key: str, default: int) -> int:
         value = os.getenv(key)
         if value is None:
@@ -258,7 +255,8 @@ class SessionConfigManager:
 
         return allowed_levels
 
-    def _load_from_env(self) -> None:
+    def _load_from_env(self, env_path: str = ".env") -> None:
+        load_dotenv(env_path, override=True)
         # 服务器配置
         self.config['HOST'] = os.getenv('HOST', '127.0.0.1')
         self.config['PORT'] = self._parse_int_env('PORT', 3000)
@@ -316,10 +314,88 @@ class SessionConfigManager:
         return hashlib.md5(str(self.config).encode('utf-8')).hexdigest()
 
 
+class EnvFileManager:
+    """环境文件管理封装"""
+
+    @staticmethod
+    def update(update: dict, env_path: str = ".env") -> None:
+        """原子化更新.env文件 - 修复换行问题"""
+        # 读取现有内容
+        lines = []
+        if os.path.exists(env_path):
+            with open(env_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+
+        # 创建更新后的内容列表
+        updated_keys = set()
+        new_lines = []
+
+        # 处理现有行
+        for line in lines:
+            stripped_line = line.strip()
+            # 跳过空行和注释行
+            if not stripped_line or stripped_line.startswith("#"):
+                new_lines.append(line)
+                continue
+
+            # 找到键值对
+            if "=" in line:
+                key, remaining = line.split("=", 1)
+                key = key.strip()
+
+                # 处理键值对行
+                if key in update:
+                    # 处理注释
+                    comment_part = ""
+                    if "#" in remaining:
+                        value_part, comment = remaining.split("#", 1)
+                        comment_part = f" #{comment}"
+                    else:
+                        value_part = remaining
+
+                    # 替换值并添加回新行
+                    formatted_value = update[key]
+                    if any(char in formatted_value for char in " #\"'") and not formatted_value.startswith(('"', "'")):
+                        if '"' in formatted_value:
+                            formatted_value = f"'{formatted_value}'"
+                        else:
+                            formatted_value = f'"{formatted_value}"'
+
+                    new_line = f"{key}={formatted_value}{comment_part}"
+                    # 确保添加换行符
+                    new_lines.append(new_line + "\n")
+                    updated_keys.add(key)
+                else:
+                    # 保留未修改的行，保持原始换行符
+                    new_lines.append(line)
+            else:
+                new_lines.append(line)
+
+        # 添加新配置项，确保每个配置项独立成行
+        for key, value in update.items():
+            if key not in updated_keys:
+                # 处理特殊字符
+                if any(char in value for char in " #\"'"):
+                    if '"' in value:
+                        formatted_value = f"'{value}'"
+                    else:
+                        formatted_value = f'"{value}"'
+                else:
+                    formatted_value = value
+
+                # 确保新行独立且包含换行符
+                new_line = f"{key}={formatted_value}"
+                new_lines.append("\n")  # 先添加换行符与之前的内容分隔
+                new_lines.append(new_line + "\n")
+
+        # 原子写入
+        with open(env_path, "w", encoding="utf-8") as f:
+            f.writelines(new_lines)
+
+
 # 示例使用
 if __name__ == "__main__":
     # 创建默认会话配置
-    load_dotenv()
     session_config = SessionConfigManager()
 
     # 使用新的get方法获取配置值
@@ -359,9 +435,23 @@ if __name__ == "__main__":
 
     # 更新会话配置
     new_config = {
-        "MYSQL_PORT": "13308"
+        "MYSQL_PORT": "3306"
     }
     session_config.update(new_config)
-
     print("\n更新后的配置:")
     print(f"MySQL端口: {session_config.get('MYSQL_PORT')}")
+
+    updates = {
+        "MYSQL_PORT": "13309",
+        "MYSQL_USER": "videx1",
+    }
+
+    # 获取当前文件所在目录的绝对路径
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    env_file = os.path.join(current_dir, ".env")
+
+    EnvFileManager.update(updates, env_file)
+    print("\n环境变量更新成功")
+
+    session_config1 = SessionConfigManager()
+    print(f"MySQL端口: {session_config1.get('MYSQL_PORT')}")

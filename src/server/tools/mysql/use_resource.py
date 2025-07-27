@@ -1,0 +1,124 @@
+import json
+import time
+import logging
+from typing import Dict, Any, Sequence
+from mcp import Tool
+from mcp.types import TextContent
+
+from server.resources import QueryLogResource
+from server.tools.mysql.base import BaseHandler
+from server.utils.logger import get_logger, configure_logger
+
+logger = get_logger(__name__)
+configure_logger(log_filename="sql_tools.log")
+logger.setLevel(logging.WARNING)
+
+
+class GetQueryLogs(BaseHandler):
+    """获取查询日志工具"""
+    name = "get_query_logs"
+    description = (
+        "获取指定工具的历史查询记录，可用于分析工具使用情况和查询模式"
+    )
+
+    def get_tool_description(self) -> Tool:
+        return Tool(
+            name=self.name,
+            description=self.description,
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "tool_name": {
+                        "type": "string",
+                        "description": "要查询的工具名称，如 'execute_sql' 或 'get_table_name'"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "返回的日志条数限制，默认为10",
+                        "default": 10
+                    },
+                    "success_only": {
+                        "type": "boolean",
+                        "description": "是否只返回成功的查询记录，默认为false",
+                        "default": False
+                    }
+                },
+                "required": ["tool_name"]
+            }
+        )
+
+    async def run_tool(self, arguments: Dict[str, Any]) -> Sequence[TextContent]:
+        """获取指定工具的历史查询记录
+
+        参数:
+            tool_name (str): 要查询的工具名称
+            limit (int): 返回的日志条数限制（可选，默认10）
+            success_only (bool): 是否只返回成功的查询记录（可选，默认false）
+
+        返回:
+            list[TextContent]: 包含查询结果的TextContent列表
+            - 返回匹配的查询日志记录
+            - 结果以JSON格式返回，包含时间戳、操作者、工具名称、操作描述和结果摘要
+        """
+        try:
+            # 获取参数
+            tool_name = arguments["tool_name"]
+            limit = arguments.get("limit", 10)
+            success_only = arguments.get("success_only", False)
+
+            # 验证limit参数
+            if limit <= 0:
+                return [TextContent(text="Limit must be a positive integer")]
+
+            # 加载日志文件
+            logs = QueryLogResource.load_logs(tool_name)
+
+            # 过滤日志
+            filtered_logs = []
+            for log in logs:
+                # 检查工具名称是否匹配
+                if log.get("tool_name") != tool_name:
+                    continue
+
+                # 检查成功状态
+                if success_only and not log.get("success", False):
+                    continue
+
+                filtered_logs.append(log)
+
+            # 限制返回数量
+            filtered_logs = filtered_logs[-limit:] if limit < len(filtered_logs) else filtered_logs
+
+            # 格式化结果
+            result = []
+            for log in filtered_logs:
+                # 转换时间戳为可读格式
+                timestamp = time.strftime(
+                    "%Y-%m-%d %H:%M:%S",
+                    time.localtime(log["timestamp"])
+                )
+
+                # 创建结果摘要
+                result_summary = log.get("result", "")[:100] + "..." if log.get("result") else ""
+
+                # 构建日志条目
+                log_entry = {
+                    "timestamp": timestamp,
+                    "tool_name": log.get("tool_name", "unknown"),
+                    "operation": log.get("operation", ""),
+                    "success": log.get("success", False),
+                    "result_summary": result_summary
+                }
+
+                result.append(log_entry)
+
+            # 返回结果
+            return [TextContent(text=json.dumps({
+                "tool_name": tool_name,
+                "total_logs": len(filtered_logs),
+                "logs": result
+            }, indent=2))]
+
+        except Exception as e:
+            logger.error(f"获取查询日志失败: {str(e)}", exc_info=True)
+            return [TextContent(text=f"获取查询日志失败: {str(e)}")]

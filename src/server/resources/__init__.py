@@ -1,9 +1,12 @@
-from .DataBaseResource import MySQLResource, TableResource
-from .BaseResource import BaseResource, ResourceRegistry
+from .db_resource import MySQLResource, TableResource
+from .base import BaseResource, ResourceRegistry
+from .log_resource import QueryLogsResource, QueryLogResource
 
 __all__ = [
     "MySQLResource",
     "ResourceRegistry",
     "BaseResource",
-    "TableResource"
+    "TableResource",
+    "QueryLogResource",
+    "QueryLogsResource"
 ]

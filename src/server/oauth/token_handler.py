@@ -1,8 +1,7 @@
 from datetime import datetime, timedelta
 import jwt
 from typing import Dict, Optional, Tuple
-
-from ..oauth import oauth_config
+from server.oauth.config import oauth_config
 
 
 class TokenHandler:

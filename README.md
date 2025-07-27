@@ -30,24 +30,22 @@
 
 | 工具                        | 功能说明                                                           |
 |---------------------------|----------------------------------------------------------------|
-| sql_executor              | 执行单条SQL语句，但集成了SQL安全分析器、范围检查和权限控制，且只允许使用安全的参数化查询防止SQL注入攻击。      |
+| sql_executor              | 执行单条SQL语句，但做了SQL安全分析、范围检查和权限控制，且只允许使用安全的参数化查询防止SQL注入攻击。        |
+| get_table_name            | 根据表中文名或表描述搜索数据库中对应的表名                                          |
 | get_table_desc            | 根据表名搜索数据库中对应的表字段                                               |
 | get_table_index           | 根据表名搜索数据库中对应的表索引                                               |
-| get_table_name            | 根据表中文名或表描述搜索数据库中对应的表名                                          |
+| get_table_lock            | 获取当前 MySQL 服务器行级锁、表级锁情况                                        |
 | get_database_info         | 获取数据库基本信息                                                      |
 | get_database_tables       | 获取数据库所有表和对应的表注释                                                |
-| analyze_table_stats       | 分析表统计信息和列统计信息                                                  |
+| get_table_stats           | 获取表统计信息和列统计信息                                                  |
 | check_table_constraints   | 检查表约束信息                                                        |
-| get_table_lock            | 获取当前 MySQL 服务器行级锁、表级锁情况                                        |
+| get_process_list          | 获取当前进程列表                                                       |
 | get_db_health_running     | 获取当前 MySQL 的健康状态                                               |
 | get_db_health_index_usage | 获取当前连接的MySQL库的索引使用情况,包含冗余索引情况、性能较差的索引情况、未使用索引且查询时间大于30秒top10情况 |
-| get_process_list          | 获取当前进程列表                                                       |
 | switch_database           | 动态切换数据库连接配置                                                    |
 | analyze_query_performance | 分析SQL查询的性能特征，包括执行时间、资源使用等                                      |
-| collect_table_stats       | 收集指定表的元数据、统计信息和数据分布情况（直方图、NDV等）                                |                            
-| template_query_executor   | 执行模板化查询任务，支持Top N查询、特定条件查询、聚合查询等常见模式                           |                           
-
-部分工具还在测试中。。。
+| collect_table_stats       | 收集指定表的元数据、统计信息和数据分布情况（如NDV等）                                   |                            
+| dynamic_query_prompt      | 通过动态参数生成提示词模板，主要是为支持告警/隐患/性能监控的智能查询服务                          |                           
 
 ## 使用说明
 

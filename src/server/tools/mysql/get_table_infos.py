@@ -9,8 +9,65 @@ from server.tools.mysql.base import BaseHandler
 from server.tools.mysql import ExecuteSQL
 
 logger = get_logger(__name__)
-configure_logger(log_filename="tools.log")
+configure_logger(log_filename="sql_tools.log")
 logger.setLevel(logging.WARNING)
+
+
+class GetTableName(BaseHandler):
+    name = "get_table_name"
+    description = (
+        "根据表中文名或表描述搜索数据库中对应的表名(Search for table names in the database based on table comments and descriptions )"
+    )
+
+    def get_tool_description(self) -> Tool:
+        return Tool(
+            name=self.name,
+            description=self.description,
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "text": {
+                        "type": "string",
+                        "description": "要搜索的表中文名、表描述，仅支持单个查询"
+                    }
+                },
+                "required": ["text"]
+            }
+        )
+
+    async def run_tool(self, arguments: Dict[str, Any]) -> Sequence[TextContent]:
+        """根据表的注释搜索数据库中的表名
+
+        参数:
+            text (str): 要搜索的表中文注释关键词
+
+        返回:
+            list[TextContent]: 包含查询结果的TextContent列表
+            - 返回匹配的表名、数据库名和表注释信息
+            - 结果以CSV格式返回，包含列名和数据
+        """
+        try:
+            if "text" not in arguments:
+                raise ValueError("缺少查询语句")
+
+            text = arguments["text"]
+
+            db_manager = get_current_database_manager()
+            config = db_manager.get_current_config()
+
+            execute_sql = ExecuteSQL()
+
+            sql = "SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_COMMENT "
+            sql += f"FROM information_schema.TABLES WHERE TABLE_SCHEMA = '{config['database']}' AND TABLE_COMMENT LIKE '%{text}%';"
+
+            # 安全记录日志（避免记录敏感数据）
+            logger.info(f"搜索数据库: {config['database']}, 关键字: {text}")
+            logger.info(f"执行的 SQL 语句：{sql}")
+            return await execute_sql.run_tool({"query": sql, "tool_name": "get_table_name"})
+
+        except Exception as e:
+            logger.error(f"执行查询时出错: {str(e)}", exc_info=True)
+            return [TextContent(type="text", text=f"执行查询时出错: {str(e)}")]
 
 
 ########################################################################################################################
@@ -70,7 +127,7 @@ class GetTableDesc(BaseHandler):
 
             logger.info(f"执行的 SQL 语句：{sql}")
 
-            return await execute_sql.run_tool({"query": sql})
+            return await execute_sql.run_tool({"query": sql, "tool_name": "get_table_desc"})
 
         except Exception as e:
             return [TextContent(type="text", text=f"执行查询时出错: {str(e)}")]
@@ -131,7 +188,7 @@ class GetTableIndex(BaseHandler):
             sql += f"FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = '{config['database']}' "
             sql += f"AND TABLE_NAME IN ('{table_condition}') ORDER BY TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX;"
 
-            return await execute_sql.run_tool({"query": sql})
+            return await execute_sql.run_tool({"query": sql, "tool_name": "get_table_index"})
 
         except Exception as e:
             return [TextContent(type="text", text=f"执行查询时出错: {str(e)}")]
@@ -225,7 +282,7 @@ class GetTableLock(BaseHandler):
             logger.info(f"执行的 MySQL 5.7 锁查询语句：{sql}")
 
         try:
-            return await execute_sql.run_tool({"query": sql})
+            return await execute_sql.run_tool({"query": sql, "tool_name": "get_table_lock"})
         except Exception as e:
             logger.error(f"锁查询失败: {str(e)}")
             return [TextContent(text=f"锁查询失败: {str(e)}")]
@@ -236,68 +293,10 @@ class GetTableLock(BaseHandler):
         try:
             sql = "SHOW OPEN TABLES WHERE In_use > 0;"
             logger.info(f"执行的 SQL 语句：{sql}")
-            return await execute_sql.run_tool({"query": sql})
+            return await execute_sql.run_tool({"query": sql, "tool_name": "get_table_lock"})
         except Exception as e:
             logger.error(f"表级锁查询失败: {str(e)}")
             return [TextContent(text=f"表级锁查询失败: {str(e)}")]
-
-
-########################################################################################################################
-class GetTableName(BaseHandler):
-    name = "get_table_name"
-    description = (
-        "根据表中文名或表描述搜索数据库中对应的表名(Search for table names in the database based on table comments and descriptions )"
-    )
-
-    def get_tool_description(self) -> Tool:
-        return Tool(
-            name=self.name,
-            description=self.description,
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "text": {
-                        "type": "string",
-                        "description": "要搜索的表中文名、表描述，仅支持单个查询"
-                    }
-                },
-                "required": ["text"]
-            }
-        )
-
-    async def run_tool(self, arguments: Dict[str, Any]) -> Sequence[TextContent]:
-        """根据表的注释搜索数据库中的表名
-
-        参数:
-            text (str): 要搜索的表中文注释关键词
-
-        返回:
-            list[TextContent]: 包含查询结果的TextContent列表
-            - 返回匹配的表名、数据库名和表注释信息
-            - 结果以CSV格式返回，包含列名和数据
-        """
-        try:
-            if "text" not in arguments:
-                raise ValueError("缺少查询语句")
-
-            text = arguments["text"]
-
-            db_manager = get_current_database_manager()
-            config = db_manager.get_current_config()
-
-            execute_sql = ExecuteSQL()
-
-            sql = "SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_COMMENT "
-            sql += f"FROM information_schema.TABLES WHERE TABLE_SCHEMA = '{config['database']}' AND TABLE_COMMENT LIKE '%{text}%';"
-
-            # 安全记录日志（避免记录敏感数据）
-            logger.info(f"搜索数据库: {config['database']}, 关键字: {text}")
-            logger.info(f"执行的 SQL 语句：{sql}")
-            return await execute_sql.run_tool({"query": sql})
-
-        except Exception as e:
-            logger.error(f"执行查询时出错: {str(e)}", exc_info=True)
-            return [TextContent(type="text", text=f"执行查询时出错: {str(e)}")]
 
 
 ########################################################################################################################
@@ -365,7 +364,7 @@ class GetDatabaseInfo(BaseHandler):
             else:
                 params = []
 
-            return await execute_sql.run_tool({"query": sql, "parameters": params})
+            return await execute_sql.run_tool({"query": sql, "parameters": params, "tool_name": "get_database_info"})
 
         except Exception as e:
             logger.error(f"获取数据库信息失败: {str(e)}", exc_info=True)
@@ -418,7 +417,7 @@ class GetDatabaseTables(BaseHandler):
 
             sql += " ORDER BY TABLE_NAME"
 
-            return await execute_sql.run_tool({"query": sql, "parameters": params})
+            return await execute_sql.run_tool({"query": sql, "parameters": params, "tool_name": "get_database_tables"})
 
         except Exception as e:
             logger.error(f"获取数据库表信息失败: {str(e)}", exc_info=True)
@@ -427,8 +426,8 @@ class GetDatabaseTables(BaseHandler):
 
 ########################################################################################################################
 ########################################################################################################################
-class AnalyzeTableStats(BaseHandler):
-    name = "analyze_table_stats"
+class GetTableStats(BaseHandler):
+    name = "get_table_stats"
     description = "分析表统计信息和列统计信息(Analyze table statistics and column statistics)"
 
     def get_tool_description(self) -> Tool:
@@ -498,13 +497,15 @@ class AnalyzeTableStats(BaseHandler):
             # 执行查询
             stats_result = await execute_sql.run_tool({
                 "query": stats_sql,
-                "parameters": stats_params
+                "parameters": stats_params,
+                "tool_name": "get_table_stats"
             })
 
             if include_columns:
                 columns_result = await execute_sql.run_tool({
                     "query": columns_sql,
-                    "parameters": columns_params
+                    "parameters": columns_params,
+                    "tool_name": "get_table_stats"
                 })
                 return stats_result + columns_result
             else:
@@ -588,7 +589,8 @@ class CheckTableConstraints(BaseHandler):
                 fk_params = [db_name, table_name]
                 fk_result = await execute_sql.run_tool({
                     "query": fk_sql,
-                    "parameters": fk_params
+                    "parameters": fk_params,
+                    "tool_name": "check_table_constraints"
                 })
                 results.extend(fk_result)
 
@@ -607,7 +609,8 @@ class CheckTableConstraints(BaseHandler):
                     check_params = [db_name, table_name]
                     check_result = await ExecuteSQL().run_tool({
                         "query": check_sql,
-                        "parameters": check_params
+                        "parameters": check_params,
+                        "tool_name": "check_table_constraints"
                     })
                     results.extend(check_result)
                 except Exception as e:
@@ -624,7 +627,8 @@ class CheckTableConstraints(BaseHandler):
                         check_params = [db_name, table_name]
                         check_result = await ExecuteSQL().run_tool({
                             "query": check_sql,
-                            "parameters": check_params
+                            "parameters": check_params,
+                            "tool_name": "check_table_constraints"
                         })
                         results.extend(check_result)
                     except Exception:

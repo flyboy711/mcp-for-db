@@ -1,11 +1,11 @@
-from .AnalysisMySqlIssues import AnalysisMySqlIssues
-from .QueryTableData import QueryTableData
-from .EnhancedSecurity import EnhancedSecurityPrompt
-from .IndexOptAdvisor import IndexOptimizationAdvisorPrompt
+from .query_table_data import QueryTableData
+from .index_opt_advisor import IndexOptimizationAdvisorPrompt
+from .perform_opt import PerformanceOptimizationPrompt
+from .tools_prompts import MonitoringPromptGenerator
 
 __all__ = [
-    "AnalysisMySqlIssues",
     "QueryTableData",
-    "EnhancedSecurityPrompt",
-    "IndexOptimizationAdvisorPrompt"
+    "PerformanceOptimizationPrompt",
+    "IndexOptimizationAdvisorPrompt",
+    "MonitoringPromptGenerator"
 ]

@@ -114,7 +114,7 @@ async def main():
         # ret = AnalyzeQueryPerformance()
         ret = CollectTableStats()
         result = await ret.run_tool({
-            "table_name": "orders"
+            "table_name": "timeout_0"
         })
 
         print(result)
@@ -124,12 +124,20 @@ async def main():
 
 if __name__ == "__main__":
     # 创建会话配置管理器
+    # session_config_1 = SessionConfigManager({
+    #     "MYSQL_HOST": "localhost",
+    #     "MYSQL_PORT": "13308",
+    #     "MYSQL_USER": "videx",
+    #     "MYSQL_PASSWORD": "password",
+    #     "MYSQL_DATABASE": "tpch_tiny"
+    # })
+
     session_config_1 = SessionConfigManager({
-        "MYSQL_HOST": "localhost",
-        "MYSQL_PORT": "13308",
-        "MYSQL_USER": "videx",
-        "MYSQL_PASSWORD": "password",
-        "MYSQL_DATABASE": "tpch_tiny"
+        "MYSQL_HOST": "rm-uf6pyrv408i5f0gap.mysql.rds.aliyuncs.com",
+        "MYSQL_PORT": "3306",
+        "MYSQL_USER": "onedba",
+        "MYSQL_PASSWORD": "S9dKSCsdJm(mKd2",
+        "MYSQL_DATABASE": "du_trade_timeout_db_3"
     })
 
     # 创建数据库管理器

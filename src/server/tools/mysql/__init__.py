@@ -1,10 +1,11 @@
 from .execute_sql import ExecuteSQL
-from .use_prompt_query import UsePromptQueryTableData, TemplateQueryExecutor
+from .use_prompt import DynamicQueryPrompt
+from .use_resource import GetQueryLogs
 from .mysql_analyzer import AnalyzeQueryPerformance
 from .get_mysql_stats import CollectTableStats
 from .get_chinese_initials import GetChineseInitials
 from .get_table_infos import GetTableDesc, GetTableIndex, GetTableLock, GetTableName, GetDatabaseTables
-from .get_table_infos import GetDatabaseInfo, AnalyzeTableStats, CheckTableConstraints
+from .get_table_infos import GetDatabaseInfo, GetTableStats, CheckTableConstraints
 from .get_mysql_health import GetDBHealthRunning, GetDBHealthIndexUsage, GetProcessList
 from .switch_database import SwitchDatabase
 
@@ -12,7 +13,7 @@ __all__ = [
     "ExecuteSQL",
     "AnalyzeQueryPerformance",
     "CollectTableStats",
-    "TemplateQueryExecutor",
+    "DynamicQueryPrompt",
     "GetChineseInitials",
     "GetTableDesc",
     "GetTableIndex",
@@ -21,10 +22,10 @@ __all__ = [
     "SwitchDatabase",
     "GetDBHealthRunning",
     "GetDBHealthIndexUsage",
-    "UsePromptQueryTableData",
     "GetProcessList",
     "GetDatabaseTables",
     "GetDatabaseInfo",
-    "AnalyzeTableStats",
-    "CheckTableConstraints"
+    "GetTableStats",
+    "CheckTableConstraints",
+    "GetQueryLogs"
 ]

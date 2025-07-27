@@ -8,7 +8,7 @@ from server.tools.mysql.base import BaseHandler
 from server.tools.mysql import ExecuteSQL
 
 logger = get_logger(__name__)
-configure_logger(log_filename="tools.log")
+configure_logger(log_filename="sql_tools.log")
 logger.setLevel(logging.WARNING)
 
 
@@ -55,7 +55,7 @@ class GetDBHealthRunning(BaseHandler):
             sql = "SHOW FULL PROCESSLIST;SHOW VARIABLES LIKE 'max_connections';"
 
             logger.info(f"执行的 SQL 语句：{sql}")
-            return await execute_sql.run_tool({"query": sql})
+            return await execute_sql.run_tool({"query": sql, "tool_name": "get_db_health_running"})
         except Exception as e:
             logger.error(f"执行查询时出错: {str(e)}")
             return [TextContent(type="text", text=f"执行查询时出错: {str(e)}")]
@@ -72,7 +72,7 @@ class GetDBHealthRunning(BaseHandler):
 
             logger.info(f"执行的 SQL 语句：{sql}")
 
-            return await execute_sql.run_tool({"query": sql})
+            return await execute_sql.run_tool({"query": sql, "tool_name": "get_db_health_running"})
         except Exception as e:
             logger.error(f"执行查询时出错: {str(e)}")
             return [TextContent(type="text", text=f"执行查询时出错: {str(e)}")]
@@ -89,7 +89,7 @@ class GetDBHealthRunning(BaseHandler):
 
             logger.info(f"执行的 SQL 语句：{sql}")
 
-            return await execute_sql.run_tool({"query": sql})
+            return await execute_sql.run_tool({"query": sql, "tool_name": "get_db_health_running"})
         except Exception as e:
             logger.error(f"执行查询时出错: {str(e)}")
             return [TextContent(type="text", text=f"执行查询时出错: {str(e)}")]
@@ -107,7 +107,8 @@ class GetDBHealthRunning(BaseHandler):
 
             # 所有版本通用的表级锁查询
             show_open_tables = "SHOW OPEN TABLES WHERE In_use > 0;"
-            open_tables_result = await execute_sql.run_tool({"query": show_open_tables})
+            open_tables_result = await execute_sql.run_tool(
+                {"query": show_open_tables, "tool_name": "get_db_health_running"})
             results.extend(open_tables_result)
 
             # 根据版本选择行级锁查询
@@ -129,7 +130,7 @@ class GetDBHealthRunning(BaseHandler):
 
             # 执行版本特定的锁查询
             logger.info(f"执行的 SQL 语句：{lock_sql}")
-            lock_result = await execute_sql.run_tool({"query": lock_sql})
+            lock_result = await execute_sql.run_tool({"query": lock_sql, "tool_name": "get_db_health_running"})
             results.extend(lock_result)
             return results
 
@@ -188,7 +189,7 @@ class GetDBHealthIndexUsage(BaseHandler):
 
             logger.info(f"执行的 SQL 语句：{sql}")
 
-            return await execute_sql.run_tool({"query": sql})
+            return await execute_sql.run_tool({"query": sql, "tool_name": "get_db_health_index_usage"})
         except Exception as e:
             logger.error(f"执行查询时出错: {str(e)}")
             return [TextContent(type="text", text=f"执行查询时出错: {str(e)}")]
@@ -207,7 +208,7 @@ class GetDBHealthIndexUsage(BaseHandler):
 
             logger.info(f"执行的 SQL 语句：{sql}")
 
-            return await execute_sql.run_tool({"query": sql})
+            return await execute_sql.run_tool({"query": sql, "tool_name": "get_db_health_index_usage"})
         except Exception as e:
             logger.error(f"执行查询时出错: {str(e)}")
             return [TextContent(type="text", text=f"执行查询时出错: {str(e)}")]
@@ -226,7 +227,7 @@ class GetDBHealthIndexUsage(BaseHandler):
 
             logger.info(f"执行的 SQL 语句：{sql}")
 
-            return await execute_sql.run_tool({"query": sql})
+            return await execute_sql.run_tool({"query": sql, "tool_name": "get_db_health_index_usage"})
         except Exception as e:
             logger.error(f"执行查询时出错: {str(e)}")
             return [TextContent(type="text", text=f"执行查询时出错: {str(e)}")]
@@ -285,7 +286,7 @@ class GetProcessList(BaseHandler):
 
             sql += f" ORDER BY TIME DESC LIMIT {max_results}"
 
-            return await execute_sql.run_tool({"query": sql})
+            return await execute_sql.run_tool({"query": sql, "tool_name": "get_process_list"})
 
         except Exception as e:
             logger.error(f"获取进程列表失败: {str(e)}", exc_info=True)

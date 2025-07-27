@@ -1,6 +1,6 @@
 [project]
 name = "mcp-for-db"
-version = "0.7.0"
+version = "0.8.0"
 license = { text = "MIT" }
 description = "Continuously develop integrated MCP servers dedicated to databases to advance the application of AI for DB."
 readme = "README.md"
@@ -17,7 +17,10 @@ dependencies = [
     "sqlparse>=0.5.2",
     "contextvars>=2.0",
     "starlette>=0.46.1",
-    "uvicorn>=0.34.0"
+    "uvicorn>=0.34.0",
+    "numpy>=2.3.0",
+    "scikit-learn>=1.6.0",
+    "sentence-transformers>=4.0.0"
 ]
 
 [[project.authors]]

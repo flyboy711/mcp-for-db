@@ -39,8 +39,9 @@ wheels/
 
 ### 日志文件 ###
 log/          # 日志目录
-logs/          # 日志目录
+logs/         # 日志目录
 logs/**
 *.iml
 *.xml
 *.log
+*.json

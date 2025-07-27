@@ -7,12 +7,13 @@ from server.utils.logger import get_logger, configure_logger
 from mcp import Tool
 from mcp.types import TextContent
 from server.tools.mysql.base import BaseHandler
+from server.resources.log_resource import QueryLogResource
 
 # 导入上下文获取函数
 from server.config.request_context import get_current_database_manager
 
 logger = get_logger(__name__)
-configure_logger(log_filename="tools.log")
+configure_logger(log_filename="sql_tools.log")
 logger.setLevel(logging.WARNING)
 
 
@@ -26,8 +27,8 @@ class SQLResult:
     affected_rows: int = 0
 
 
-async def execute_single_statement(query: str, params: list = None,
-                                   stream_results: bool = False, batch_size: int = 1000) -> SQLResult:
+async def execute_single_statement(query: str, params: list = None, stream_results: bool = False,
+                                   batch_size: int = 1000, tool_name: str = "sql_executor") -> SQLResult:
     """
     使用DatabaseManager执行单条SQL语句（兼容位置参数格式）
 
@@ -36,6 +37,7 @@ async def execute_single_statement(query: str, params: list = None,
         params: 参数值列表（按位置对应占位符）
         stream_results: 是否流式处理大型结果集
         batch_size: 流式处理的批次大小
+        tool_name: 调用的工具名称
     """
     # 参数预处理
     final_query = query
@@ -120,10 +122,13 @@ async def execute_single_statement(query: str, params: list = None,
                 )
                 sql_result.affected_rows = result[0].get('affected_rows', 0)
 
+        QueryLogResource.log_query(tool_name=tool_name, operation=final_query, ret=str(sql_result), success=True)
+
         return sql_result
 
     except Exception as e:
         logger.exception(f"执行SQL时出错: {str(e)}")
+        QueryLogResource.log_query(tool_name=tool_name, operation=final_query, success=False, error=str(e))
         return SQLResult(success=False, message=f"执行失败: {str(e)}")
 
 
@@ -166,6 +171,11 @@ class ExecuteSQL(BaseHandler):
                         "type": "integer",
                         "description": "流式处理时每批次返回的行数（默认1000）",
                         "default": 1000
+                    },
+                    "tool_name": {
+                        "type": "string",
+                        "description": "如果直接调用SQL执行工具，则工具名为sql_executor，则否还需要传递是谁调用该工具的",
+                        "default": "sql_executor"
                     }
                 },
                 "required": ["query"]
@@ -211,6 +221,7 @@ class ExecuteSQL(BaseHandler):
         params = arguments.get("parameters", [])
         stream_results = arguments.get("stream_results", False)
         batch_size = arguments.get("batch_size", 1000)
+        tool_name = arguments.get("tool_name", "sql_executor")
 
         # 空查询检查
         if not query:
@@ -222,7 +233,8 @@ class ExecuteSQL(BaseHandler):
                 query=query,
                 params=params,
                 stream_results=stream_results,
-                batch_size=batch_size
+                batch_size=batch_size,
+                tool_name=tool_name
             )
 
             # 格式化结果
