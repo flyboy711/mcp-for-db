@@ -4,7 +4,6 @@ import logging
 import os
 from collections.abc import AsyncIterator
 from dotenv import load_dotenv
-from server.common import VectorCacheManager
 from starlette.responses import Response
 import click
 import uvicorn
@@ -54,20 +53,6 @@ async def initialize_global_resources():
 
         # 其他全局资源初始化: 比如日志资源、数据库白皮书资源
         QueryLogResource.start_flush_thread()
-
-        # 预热embedding模型和常见缓存
-        # 预加载模型
-        VectorCacheManager.preload_model()
-
-        # 预热常见查询
-        common_queries = [
-            "查询最近7天的CPU使用率",
-            "获取今天的Top10告警",
-            "分析本月磁盘使用趋势",
-            "查找用户表对应的物理表名",
-            "优化这个SQL查询的性能"
-        ]
-        VectorCacheManager.warmup_cache(common_queries)
 
         logger.info("所有资源初始化完成")
         resources_initialized = True

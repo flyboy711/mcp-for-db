@@ -19,8 +19,6 @@ dependencies = [
     "starlette>=0.46.1",
     "uvicorn>=0.34.0",
     "numpy>=2.3.0",
-    "scikit-learn>=1.6.0",
-    "sentence-transformers>=4.0.0"
 ]
 
 [[project.authors]]

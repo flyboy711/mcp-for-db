@@ -48,18 +48,7 @@ class GetQueryLogs(BaseHandler):
         )
 
     async def run_tool(self, arguments: Dict[str, Any]) -> Sequence[TextContent]:
-        """获取指定工具的历史查询记录
-
-        参数:
-            tool_name (str): 要查询的工具名称
-            limit (int): 返回的日志条数限制（可选，默认10）
-            success_only (bool): 是否只返回成功的查询记录（可选，默认false）
-
-        返回:
-            list[TextContent]: 包含查询结果的TextContent列表
-            - 返回匹配的查询日志记录
-            - 结果以JSON格式返回，包含时间戳、操作者、工具名称、操作描述和结果摘要
-        """
+        """获取指定工具的历史查询记录"""
         try:
             # 获取参数
             tool_name = arguments["tool_name"]
@@ -72,6 +61,10 @@ class GetQueryLogs(BaseHandler):
 
             # 加载日志文件
             logs = QueryLogResource.load_logs(tool_name)
+
+            # 如果没有日志，直接返回空结果
+            if not logs:
+                return [TextContent(text=f"没有找到 {tool_name} 的查询日志")]
 
             # 过滤日志
             filtered_logs = []
@@ -87,7 +80,11 @@ class GetQueryLogs(BaseHandler):
                 filtered_logs.append(log)
 
             # 限制返回数量
-            filtered_logs = filtered_logs[-limit:] if limit < len(filtered_logs) else filtered_logs
+            if limit < len(filtered_logs):
+                filtered_logs = filtered_logs[-limit:]
+                truncated = True
+            else:
+                truncated = False
 
             # 格式化结果
             result = []
@@ -113,11 +110,16 @@ class GetQueryLogs(BaseHandler):
                 result.append(log_entry)
 
             # 返回结果
-            return [TextContent(text=json.dumps({
+            response = {
                 "tool_name": tool_name,
                 "total_logs": len(filtered_logs),
                 "logs": result
-            }, indent=2))]
+            }
+
+            if truncated:
+                response["message"] = f"结果集过大，仅显示最近 {limit} 条记录"
+
+            return [TextContent(text=json.dumps(response, indent=2))]
 
         except Exception as e:
             logger.error(f"获取查询日志失败: {str(e)}", exc_info=True)

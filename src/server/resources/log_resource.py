@@ -85,16 +85,23 @@ class QueryLogResource(BaseResource):
 
                 # 使用锁确保线程安全
                 with QueryLogResource._flush_lock:
-                    # 如果文件不存在，创建新文件
+                    # 如果文件不存在，创建新文件并初始化为空数组
                     if not os.path.exists(file_path):
                         with open(file_path, 'w', encoding='utf-8') as f:
                             json.dump([], f)
+                        logger.info(f"创建新的日志文件: {file_path}")
 
                     # 读取现有日志
                     logs = []
                     try:
                         with open(file_path, 'r', encoding='utf-8') as f:
-                            logs = json.load(f)
+                            # 检查文件是否为空
+                            if os.path.getsize(file_path) > 0:
+                                try:
+                                    logs = json.load(f)
+                                except json.JSONDecodeError:
+                                    logger.error(f"日志文件 {file_path} 格式错误，将重置文件")
+                                    logs = []
                     except Exception as e:
                         logger.error(f"读取日志文件失败: {str(e)}")
                         continue
@@ -126,8 +133,22 @@ class QueryLogResource(BaseResource):
         file_path = QueryLogResource.get_log_file_path(tool_name)
         try:
             if os.path.exists(file_path):
+                # 检查文件是否为空
+                if os.path.getsize(file_path) == 0:
+                    logger.warning(f"日志文件 {file_path} 为空")
+                    return []
+
                 with open(file_path, 'r', encoding='utf-8') as json_file:
-                    logs = json.load(json_file)
+                    try:
+                        logs = json.load(json_file)
+                    except json.JSONDecodeError as e:
+                        logger.error(f"日志文件 {file_path} 格式错误: {str(e)}")
+                        # 尝试读取原始内容
+                        json_file.seek(0)
+                        raw_content = json_file.read()
+                        logger.debug(f"日志文件原始内容: {raw_content[:200]}...")
+                        return []
+
                 logger.info(f"从 {file_path} 加载了 {len(logs)} 条查询日志")
                 return logs
             else:

@@ -138,21 +138,55 @@ async def main_tools_err():
 
 async def test_main_use_prompt_tools():
     try:
-        # ret = DynamicQueryPrompt()
         ret = SmartTool()
-        # 用户查询
-        user_query = "查询最近7天的Top20 CPU使用率，按峰值排序，业务域为支付"
 
-        # 大模型解析的参数
-        parsed_params = {
-            "monitor_type": "CPU",
-            "time_range": "最近7天",
-            "top_k": "20",
-            "filters": ["业务域=支付"],
-            "sort_by": "峰值 DESC"
-        }
-        ret = await ret.run_tool({"user_query": user_query, "parsed_params": parsed_params})
-        print(ret)
+        print("=== 测试用例1: 基本SQL执行 ===")
+        result = await ret.run_tool({
+            "user_query": "查询t_users表中年龄25到30岁且姓名以张开头的用户",
+            "sql_executor.query": "SELECT * FROM t_users WHERE age BETWEEN 25 AND 27 AND name LIKE ?",
+            "sql_executor.parameters": ["张%"]
+        })
+        print(result)
+        print("\n")
+
+        print("=== 测试用例2: 带表结构查询的SQL执行 ===")
+        result = await ret.run_tool({
+            "user_query": "查询用户表的结构并执行查询",
+            "get_table_desc.table_name": "t_users",
+            "sql_executor.query": "SELECT * FROM t_users WHERE age > 25 AND age < 27 AND name LIKE ?",
+            "sql_executor.parameters": ["张%"]
+        })
+        print(result)
+        print("\n")
+
+        print("=== 测试用例3: 多工具协同工作 ===")
+        result = await ret.run_tool({
+            "user_query": "分析用户查询的性能并优化",
+            "get_table_desc.table_name": "t_users",
+            "analyze_query_performance.query": "SELECT * FROM t_users WHERE age > 25 AND age < 27",
+        })
+        print(result)
+        print("\n")
+
+        print("=== 测试用例4: 复杂参数传递 ===")
+        result = await ret.run_tool({
+            "user_query": "复杂参数传递测试",
+            "get_table_desc.table_name": "t_users",
+            "analyze_query_performance.query": "SELECT * FROM t_users",
+            "collect_table_stats.table_name": "t_users"
+        })
+        print(result)
+        print("\n")
+
+        print("=== 测试用例5: 带过滤条件的查询 ===")
+        result = await ret.run_tool({
+            "user_query": "查询活跃用户",
+            "sql_executor.query": "SELECT * FROM t_users WHERE is_active = ?",
+            "sql_executor.parameters": [1]
+        })
+        print(result)
+        print("\n")
+
 
     finally:
         await get_current_database_manager().close_pool()
@@ -180,9 +214,9 @@ if __name__ == "__main__":
 
     # 设置请求上下文
     with RequestContext(session_config_1, db_manager_1):
-        asyncio.run(test_main_use_prompt_tools())
+        # asyncio.run(test_main_use_prompt_tools())
         # asyncio.run(main_exe_sql(1))
-        # asyncio.run(main_tools())
+        asyncio.run(main_tools())
         # asyncio.run(main_tools_err())
         # asyncio.run(main_switch_db(1))
 

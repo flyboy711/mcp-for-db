@@ -1,4 +1,5 @@
 import sqlparse
+import re
 import logging
 from typing import List, Dict, Any
 from server.config import SessionConfigManager, SQLRiskLevel, DatabaseAccessLevel
@@ -11,8 +12,8 @@ logger.setLevel(logging.WARNING)
 
 class SQLParser:
     """
-    SQL 解析器，提供精确的 SQL 解析和安全分析功能
-    基于会话级配置管理器实现
+    SQL 解析器，提供健壮的 SQL 解析和安全分析功能
+    增强了对各种 SQL 语句类型的识别能力
     """
 
     def __init__(self, session_config: SessionConfigManager):
@@ -26,7 +27,8 @@ class SQLParser:
         self.ddl_operations = {'CREATE', 'ALTER', 'DROP', 'TRUNCATE', 'RENAME'}
         self.dml_operations = {'SELECT', 'INSERT', 'UPDATE', 'DELETE', 'MERGE'}
         self.metadata_operations = {'SHOW', 'DESC', 'DESCRIBE', 'EXPLAIN', 'HELP', 'ANALYZE', 'CHECK', 'CHECKSUM',
-                                    'OPTIMIZE'}
+                                    'OPTIMIZE', 'SET', 'USE', 'BEGIN', 'COMMIT', 'ROLLBACK', 'START', 'KILL'}
+        self.procedure_operations = {'CALL', 'EXECUTE', 'EXEC'}
 
     def parse_query(self, sql_query: str) -> Dict[str, Any]:
         """
@@ -122,7 +124,7 @@ class SQLParser:
         )
 
     def _process_single_statement(self, stmt: sqlparse.sql.Statement, formatted_sql: str) -> Dict[str, Any]:
-        """处理单个 SQL 语句"""
+        """处理单个 SQL 语句（增强版）"""
         # 获取操作类型
         operation_type = self._get_operation_type(stmt)
 
@@ -138,17 +140,21 @@ class SQLParser:
         # 检查 LIMIT 子句
         has_limit = self._has_limit_clause(stmt)
 
+        # 检查子查询
+        has_subquery = self._has_subquery(stmt)
+
         return {
             'operation_type': operation_type,
             'tables': tables,
             'has_where': has_where,
             'has_limit': has_limit,
-            'is_valid': True,
+            'is_valid': bool(operation_type),
             'normalized_query': formatted_sql,
             'original_query': stmt.value,
             'category': category,
             'multi_statement': False,
-            'statement_count': 1
+            'statement_count': 1,
+            'has_subquery': has_subquery
         }
 
     def _process_multi_statement(self, statements: List[sqlparse.sql.Statement]) -> Dict[str, Any]:
@@ -195,17 +201,48 @@ class SQLParser:
         }
 
     def _get_operation_type(self, stmt: sqlparse.sql.Statement) -> str:
-        """获取 SQL 操作类型"""
-        # 获取第一个 token
-        if stmt.tokens and stmt.tokens[0].ttype is sqlparse.tokens.DML:
-            return stmt.tokens[0].value.upper()
-        elif stmt.tokens and stmt.tokens[0].ttype is sqlparse.tokens.DDL:
-            return stmt.tokens[0].value.upper()
-        elif stmt.tokens and stmt.tokens[0].ttype is sqlparse.tokens.Keyword:
-            return stmt.tokens[0].value.upper()
+        """获取 SQL 操作类型（增强版）"""
+        # 获取语句类型
+        stmt_type = stmt.get_type()
 
-        # 如果无法确定，返回空字符串
-        return ""
+        if stmt_type:
+            return stmt_type.upper()
+
+        # 如果无法确定类型，检查第一个关键字
+        first_token = stmt.token_first(skip_ws=True, skip_cm=True)
+        if first_token:
+            token_value = first_token.value.upper()
+
+            # 处理 SHOW 语句
+            if token_value == 'SHOW':
+                # 检查 SHOW 的具体类型
+                next_token = stmt.token_next(first_token, skip_ws=True, skip_cm=True)
+                if next_token:
+                    # 处理 SHOW FULL PROCESSLIST
+                    if next_token.value.upper() == 'FULL':
+                        next_next = stmt.token_next(next_token, skip_ws=True, skip_cm=True)
+                        if next_next and next_next.value.upper() == 'PROCESSLIST':
+                            return 'SHOW PROCESSLIST'
+
+                    # 处理 SHOW VARIABLES
+                    elif next_token.value.upper() == 'VARIABLES':
+                        return 'SHOW VARIABLES'
+
+                    # 处理 SHOW ENGINE
+                    elif next_token.value.upper() == 'ENGINE':
+                        next_next = stmt.token_next(next_token, skip_ws=True, skip_cm=True)
+                        if next_next and next_next.value.upper() == 'INNODB':
+                            next_next_next = stmt.token_next(next_next, skip_ws=True, skip_cm=True)
+                            if next_next_next and next_next_next.value.upper() == 'STATUS':
+                                return 'SHOW ENGINE INNODB STATUS'
+
+                    # 默认返回 SHOW
+                    return 'SHOW'
+
+            # 返回第一个关键字
+            return token_value
+
+        return "UNKNOWN"
 
     def _get_operation_category(self, operation_type: str) -> str:
         """确定操作类别（DDL、DML 或元数据）"""
@@ -213,79 +250,136 @@ class SQLParser:
             return 'DDL'
         elif operation_type in self.dml_operations:
             return 'DML'
-        elif operation_type in self.metadata_operations:
+        elif operation_type in self.metadata_operations or operation_type.startswith('SHOW'):
             return 'METADATA'
+        elif operation_type in self.procedure_operations:
+            return 'PROCEDURE'
         else:
             return 'UNKNOWN'
 
     def _extract_tables(self, stmt: sqlparse.sql.Statement) -> List[str]:
-        """从 SQL 语句中提取所有表名"""
+        """从 SQL 语句中提取所有表名（增强版）"""
         tables = set()
+        sql_str = str(stmt).upper()
 
-        # 递归函数用于深入处理复杂的 SQL 结构
-        def extract_from_token(token):
-            if isinstance(token, sqlparse.sql.Identifier):
-                # 直接引用的表名 - 修复点
-                table_name = token.value.strip('`')
-                if table_name:
+        # 处理 SHOW 语句
+        if sql_str.startswith('SHOW '):
+            # SHOW FULL PROCESSLIST - 没有特定表
+            if 'PROCESSLIST' in sql_str:
+                return []
+
+            # SHOW VARIABLES - 没有特定表
+            if 'VARIABLES' in sql_str:
+                return []
+
+            # SHOW ENGINE INNODB STATUS - 没有特定表
+            if 'ENGINE INNODB STATUS' in sql_str:
+                return []
+
+            # 其他 SHOW 语句尝试提取表名
+            match = re.search(r'\bFROM\s+([\w\.]+)', sql_str)
+            if match:
+                tables.add(match.group(1))
+            return list(tables)
+
+        # 处理 SELECT 语句
+        if sql_str.startswith('SELECT'):
+            # 提取 FROM 子句中的表
+            from_matches = re.finditer(r'\bFROM\s+([\w\.]+)', sql_str)
+            for match in from_matches:
+                table_name = match.group(1).strip()
+                if '.' in table_name:
                     tables.add(table_name)
-            elif isinstance(token, sqlparse.sql.IdentifierList):
-                # 多个表，如 FROM table1, table2
-                for identifier in token.get_identifiers():
-                    table_name = identifier.value.strip('`')
-                    if table_name:
-                        tables.add(table_name)
-            elif isinstance(token, sqlparse.sql.Function):
-                # 处理子查询中的函数，可能包含表
-                for t in token.tokens:
-                    extract_from_token(t)
-            elif isinstance(token, sqlparse.sql.Parenthesis):
-                # 可能是子查询
-                if token.tokens and isinstance(token.tokens[1], sqlparse.sql.Statement):
-                    # 是子查询，递归解析
-                    tables.update(self._extract_tables(token.tokens[1]))
                 else:
-                    # 其他括号结构，递归处理
-                    for t in token.tokens:
-                        extract_from_token(t)
-            elif isinstance(token, sqlparse.sql.TokenList):
-                # 递归处理 TokenList
-                for t in token.tokens:
-                    extract_from_token(t)
+                    tables.add(table_name)
 
-        # 处理所有 tokens
-        for token in stmt.tokens:
-            extract_from_token(token)
+            # 提取 JOIN 子句中的表
+            join_matches = re.finditer(r'\bJOIN\s+([\w\.]+)', sql_str)
+            for match in join_matches:
+                table_name = match.group(1).strip()
+                if '.' in table_name:
+                    tables.add(table_name)
+                else:
+                    tables.add(table_name)
 
-        # 移除可能的重复项
+        # 处理 UPDATE 语句
+        if sql_str.startswith('UPDATE'):
+            update_matches = re.search(r'\bUPDATE\s+([\w\.]+)', sql_str)
+            if update_matches:
+                table_name = update_matches.group(1).strip()
+                if '.' in table_name:
+                    tables.add(table_name)
+                else:
+                    tables.add(table_name)
+
+        # 处理 DELETE 语句
+        if sql_str.startswith('DELETE'):
+            delete_matches = re.search(r'\bDELETE\s+FROM\s+([\w\.]+)', sql_str)
+            if delete_matches:
+                table_name = delete_matches.group(1).strip()
+                if '.' in table_name:
+                    tables.add(table_name)
+                else:
+                    tables.add(table_name)
+
+        # 处理 INSERT 语句
+        if sql_str.startswith('INSERT'):
+            insert_matches = re.search(r'\bINSERT\s+INTO\s+([\w\.]+)', sql_str)
+            if insert_matches:
+                table_name = insert_matches.group(1).strip()
+                if '.' in table_name:
+                    tables.add(table_name)
+                else:
+                    tables.add(table_name)
+
+        # 处理其他语句中的表名
+        table_matches = re.finditer(r'\b(?:FROM|JOIN|UPDATE|INTO|TABLE)\s+([\w\.]+)', sql_str)
+        for match in table_matches:
+            table_name = match.group(1).strip()
+            if '.' in table_name:
+                tables.add(table_name)
+            else:
+                tables.add(table_name)
+
         return list(tables)
 
     def _has_where_clause(self, stmt: sqlparse.sql.Statement) -> bool:
-        """检查 SQL 语句是否包含 WHERE 子句"""
-        for token in stmt.tokens:
-            if isinstance(token, sqlparse.sql.Where):
-                return True
-            elif isinstance(token, sqlparse.sql.TokenList):
-                if self._has_where_clause(token):
-                    return True
-        return False
+        """检查 SQL 语句是否包含 WHERE 子句（增强版）"""
+        # SHOW 语句通常没有 WHERE 子句
+        sql_str = str(stmt).upper()
+        if sql_str.startswith('SHOW '):
+            return False
+
+        # 使用正则表达式检查 WHERE 关键字
+        return 'WHERE' in sql_str
 
     def _has_limit_clause(self, stmt: sqlparse.sql.Statement) -> bool:
-        """检查 SQL 语句是否包含 LIMIT 子句"""
-        for token in stmt.tokens:
-            if token.ttype is sqlparse.tokens.Keyword and token.value.upper() == 'LIMIT':
-                return True
-            elif isinstance(token, sqlparse.sql.TokenList):
-                if self._has_limit_clause(token):
-                    return True
-        return False
+        """检查 SQL 语句是否包含 LIMIT 子句（增强版）"""
+        # SHOW 语句通常没有 LIMIT 子句
+        sql_str = str(stmt).upper()
+        if sql_str.startswith('SHOW '):
+            return False
+
+        # 使用正则表达式检查 LIMIT 关键字
+        return 'LIMIT' in sql_str
+
+    def _has_subquery(self, stmt: sqlparse.sql.Statement) -> bool:
+        """检查 SQL 语句是否包含子查询"""
+        # 使用正则表达式检查子查询模式
+        sql_str = str(stmt).upper()
+        return re.search(r'\bSELECT\s+.*?\bFROM\s+\(', sql_str) is not None
 
     def _determine_risk_level(self, parsed_result: Dict[str, Any]) -> SQLRiskLevel:
-        """根据解析结果确定风险等级"""
+        """根据解析结果确定风险等级（增强版）"""
         op_type = parsed_result['operation_type']
+        category = parsed_result['category']
+
+        # 元数据操作通常是低风险
+        if category == 'METADATA':
+            return SQLRiskLevel.LOW
 
         # DDL 操作通常有高风险
-        if parsed_result['category'] == 'DDL':
+        if category == 'DDL':
             if op_type in {'DROP', 'TRUNCATE'}:
                 return SQLRiskLevel.CRITICAL
             elif op_type in {'ALTER', 'RENAME'}:
@@ -305,10 +399,6 @@ class SQLParser:
         elif op_type == 'INSERT':
             return SQLRiskLevel.MEDIUM
         elif op_type == 'SELECT':
-            return SQLRiskLevel.LOW
-
-        # 元数据操作
-        if op_type in {'SHOW', 'DESCRIBE', 'EXPLAIN'}:
             return SQLRiskLevel.LOW
 
         # 其他操作默认为中等风险
@@ -373,7 +463,7 @@ class SQLParser:
         sql_upper = sql_query.strip().upper()
         parts = sql_upper.split()
 
-        operation_type = parts[0] if parts else ""
+        operation_type = parts[0] if parts else "UNKNOWN"
 
         # 确定操作类别
         category = 'UNKNOWN'
@@ -381,8 +471,10 @@ class SQLParser:
             category = 'DDL'
         elif operation_type in self.dml_operations:
             category = 'DML'
-        elif operation_type in self.metadata_operations:
+        elif operation_type in self.metadata_operations or operation_type.startswith('SHOW'):
             category = 'METADATA'
+        elif operation_type in self.procedure_operations:
+            category = 'PROCEDURE'
 
         # 基本的表名提取
         tables = []
@@ -415,7 +507,7 @@ class SQLParser:
     def _empty_result(self) -> Dict[str, Any]:
         """返回空查询结果"""
         return {
-            'operation_type': '',
+            'operation_type': 'UNKNOWN',
             'tables': [],
             'has_where': False,
             'has_limit': False,
@@ -446,12 +538,28 @@ if __name__ == '__main__':
     # 创建 SQL 解析器
     sql_parser = SQLParser(session_config)
 
-    # 解析 SQL 查询
-    sql = "SELECT * FROM t_users; DELETE FROM t_users WHERE id < 1000"
-    parsed_result = sql_parser.parse_query(sql)
+    # 测试 SHOW 语句
+    test_cases = [
+        "SHOW FULL PROCESSLIST",
+        "SHOW VARIABLES LIKE 'max_connections'",
+        "SHOW ENGINE INNODB STATUS",
+        "SELECT * FROM INFORMATION_SCHEMA.INNODB_TRX",
+        "SHOW OPEN TABLES WHERE In_use > 0"
+    ]
 
-    # 分析安全性
-    security_analysis = sql_parser.analyze_security(parsed_result)
+    for sql in test_cases:
+        print(f"\n测试 SQL: {sql}")
+        parsed_result = sql_parser.parse_query(sql)
+        print("解析结果:")
+        print(f"  操作类型: {parsed_result['operation_type']}")
+        print(f"  类别: {parsed_result['category']}")
+        print(f"  表名: {parsed_result['tables']}")
+        print(f"  有 WHERE: {parsed_result['has_where']}")
+        print(f"  有 LIMIT: {parsed_result['has_limit']}")
 
-    print("解析结果:", parsed_result)
-    print("安全分析:", security_analysis)
+        security_analysis = sql_parser.analyze_security(parsed_result)
+        print("安全分析:")
+        print(f"  风险等级: {security_analysis['risk_level'].name}")
+        print(f"  是否允许: {security_analysis['is_allowed']}")
+        if not security_analysis['is_allowed']:
+            print(f"  原因: {', '.join(security_analysis['reasons'])}")

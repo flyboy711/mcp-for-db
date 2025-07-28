@@ -1,13 +1,28 @@
 from typing import Dict, Any, Sequence, Type, ClassVar, List
 from mcp.types import TextContent, Tool
-from server.common import ToolCall
-from server.common.tools import ENHANCED_DESCRIPTIONS
+from server.common import ENHANCED_DESCRIPTIONS
 
 
+class ToolCall:
+    """表示一个工具调用请求"""
+
+    def __init__(self, name: str, arguments: Dict[str, Any]):
+        self.name = name
+        self.arguments = arguments
+
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典格式"""
+        return {
+            "name": self.name,
+            "arguments": self.arguments
+        }
+
+
+########################################################################################################################
+########################################################################################################################
 class ToolRegistry:
     """工具注册表，用于管理所有工具实例"""
     _tools: ClassVar[Dict[str, 'BaseHandler']] = {}
-    _enhanced_descriptions: ClassVar[Dict[str, str]] = {}
 
     @classmethod
     def register(cls, tool_class: Type['BaseHandler']) -> Type['BaseHandler']:
@@ -25,7 +40,8 @@ class ToolRegistry:
     def get_tool(cls, name: str) -> 'BaseHandler':
         """获取工具实例"""
         if name not in cls._tools:
-            raise ValueError(f"未知的工具: {name}")
+            available_tools = ", ".join(cls._tools.keys())
+            raise ValueError(f"未知的工具: {name}，可用工具: {available_tools}")
         return cls._tools[name]
 
     @classmethod
@@ -49,26 +65,27 @@ class ToolRegistry:
     async def execute_workflow(cls, tool_calls: List[ToolCall]) -> Sequence[TextContent]:
         """执行工具工作流"""
         results = []
-        context = {}
 
         for call in tool_calls:
-            tool = cls.get_tool(call.name)
+            try:
+                tool = cls.get_tool(call.name)
 
-            # 设置上下文
-            tool.set_context(context)
-
-            # 执行工具
-            tool_result = await tool.run_tool(call.arguments)
-            results.extend(tool_result)
-
-            # 更新上下文
-            for content in tool_result:
-                if isinstance(content, TextContent):
-                    context[f"{call.name}.output"] = content.text
+                # 直接使用参数，不进行模板替换
+                tool_result = await tool.run_tool(call.arguments)
+                results.extend(tool_result)
+            except Exception as e:
+                results.append(TextContent(type="text", text=f"执行工具 {call.name} 失败: {str(e)}"))
 
         return results
 
+    @classmethod
+    def tools(cls):
+        """获取所有工具实例"""
+        return cls._tools
 
+
+########################################################################################################################
+########################################################################################################################
 class BaseHandler:
     """工具基类"""
     name: str = ""
@@ -80,14 +97,6 @@ class BaseHandler:
         super().__init_subclass__(**kwargs)
         if cls.name:  # 只注册有名称的工具
             ToolRegistry.register(cls)
-
-    def __init__(self):
-        super().__init__()
-        self.context = {}  # 工作流上下文
-
-    def set_context(self, context: Dict[str, Any]):
-        """设置工作流上下文"""
-        self.context = context
 
     def get_tool_description(self) -> Tool:
         """获取工具描述（默认实现）"""
@@ -104,25 +113,145 @@ class BaseHandler:
         )
 
     async def run_tool(self, arguments: Dict[str, Any]) -> Sequence[TextContent]:
-        """执行工具 - 使用上下文解析参数"""
-        # 解析上下文变量
-        resolved_args = {}
-        for key, value in arguments.items():
-            if isinstance(value, str):
-                # 替换模板变量
-                resolved_value = value
-                for var, val in self.context.items():
-                    resolved_value = resolved_value.replace(f"{{{var}}}", str(val))
-                resolved_args[key] = resolved_value
-            else:
-                resolved_args[key] = value
-
-        # 调用实际工具逻辑
-        return await self._run_tool_impl(resolved_args)
-
-    async def _run_tool_impl(self, arguments: Dict[str, Any]) -> Sequence[TextContent]:
-        """实际工具实现（由子类重写）"""
+        """执行工具 - 直接调用实际工具逻辑"""
         raise NotImplementedError
 
+
+########################################################################################################################
+########################################################################################################################
+
+class WorkflowOrchestrator:
+    """工作流编排器 - 根据参数组装工具调用链"""
+
+    @staticmethod
+    def generate_workflow(primary_tool: str, tool_params: Dict[str, Dict[str, Any]]) -> List[ToolCall]:
+        """根据主工具和解析的参数生成工具调用链"""
+        # 只创建主工具的调用
+        return [
+            ToolCall(
+                name=primary_tool,
+                arguments=tool_params.get(primary_tool, {})
+            )
+        ]
+
+
+########################################################################################################################
+########################################################################################################################
+class ToolSelector:
+    """工具选择器 - 智能工具内部使用"""
+
+    # 工具优先级映射（从高到低）
+    TOOL_PRIORITY = {
+        "high": ["sql_executor", "get_query_logs"],
+        "medium": ["analyze_query_performance", "collect_table_stats", "get_db_health_index_usage"],
+        "low": ["get_table_name", "get_table_desc", "get_table_index", "get_table_stats"]
+    }
+
+    # 工具类别映射
+    TOOL_CATEGORIES = {
+        "metadata": ["get_table_name", "get_table_desc", "get_table_index", "get_database_info"],
+        "execution": ["sql_executor"],
+        "analysis": ["analyze_query_performance", "collect_table_stats", "get_table_stats"],
+        "monitoring": ["get_process_list", "get_db_health_running", "get_table_lock"],
+        "utility": ["switch_database", "get_chinese_initials", "get_query_logs"]
+    }
+
+    # 参数到工具的映射
+    PARAM_TO_TOOL_MAPPING = {
+        "query": ["sql_executor", "analyze_query_performance"],
+        "table_name": ["get_table_desc", "get_table_index", "get_table_stats"],
+        "text": ["get_table_name", "get_chinese_initials"],
+        "host": ["switch_database"],
+        "database": ["switch_database"],
+        "time_range": ["collect_table_stats"],
+        "tool_name": ["get_query_logs", "sql_executor"]
+    }
+
+    @staticmethod
+    def recommend_tools(tool_params: Dict[str, Dict[str, Any]]) -> List[str]:
+        """根据解析的参数推荐最合适的工具（排除smart_tool）"""
+        recommended = set()
+
+        # 1. 基于参数类型推荐
+        for tool_name, params in tool_params.items():
+            # 跳过smart_tool自身参数
+            if tool_name == "smart_tool":
+                continue
+
+            for param_name in params.keys():
+                if param_name in ToolSelector.PARAM_TO_TOOL_MAPPING:
+                    for tool in ToolSelector.PARAM_TO_TOOL_MAPPING[param_name]:
+                        # 排除smart_tool
+                        if tool != "smart_tool":
+                            recommended.add(tool)
+
+        # 2. 基于工具类别推荐
+        if "query" in tool_params.get("sql_executor", {}):
+            # 如果有SQL查询，推荐相关分析工具
+            for tool in ToolSelector.TOOL_CATEGORIES["analysis"]:
+                if tool != "smart_tool":
+                    recommended.add(tool)
+
+        # 3. 如果没有推荐工具，返回所有可用工具（排除smart_tool）
+        if not recommended:
+            all_tools = list(ToolRegistry.tools().keys())
+            if "smart_tool" in all_tools:
+                all_tools.remove("smart_tool")
+            return all_tools
+
+        # 按优先级排序
+        return ToolSelector._sort_by_priority(list(recommended))
+
+    @staticmethod
+    def select_primary_tool(tool_params: Dict[str, Dict[str, Any]], recommended_tools: List[str]) -> str:
+        """从推荐工具中选择主工具（排除smart_tool）"""
+        # 1. 优先选择执行类工具
+        for tool in ToolSelector.TOOL_PRIORITY["high"]:
+            if tool in recommended_tools and tool != "smart_tool":
+                return tool
+
+        # 2. 其次选择分析类工具
+        for tool in ToolSelector.TOOL_PRIORITY["medium"]:
+            if tool in recommended_tools and tool != "smart_tool":
+                return tool
+
+        # 3. 最后选择元数据类工具
+        for tool in ToolSelector.TOOL_PRIORITY["low"]:
+            if tool in recommended_tools and tool != "smart_tool":
+                return tool
+
+        # 4. 如果都没有，返回第一个推荐工具（排除smart_tool）
+        for tool in recommended_tools:
+            if tool != "smart_tool":
+                return tool
+
+        return "sql_executor"  # 默认回退
+
+    @staticmethod
+    def _sort_by_priority(tools: List[str]) -> List[str]:
+        """按优先级排序工具列表（排除smart_tool）"""
+        priority_order = []
+
+        # 添加高优先级工具
+        for tool in ToolSelector.TOOL_PRIORITY["high"]:
+            if tool in tools and tool != "smart_tool":
+                priority_order.append(tool)
+
+        # 添加中优先级工具
+        for tool in ToolSelector.TOOL_PRIORITY["medium"]:
+            if tool in tools and tool != "smart_tool":
+                priority_order.append(tool)
+
+        # 添加低优先级工具
+        for tool in ToolSelector.TOOL_PRIORITY["low"]:
+            if tool in tools and tool != "smart_tool":
+                priority_order.append(tool)
+
+        # 添加其他未分类工具（排除smart_tool）
+        for tool in tools:
+            if tool not in priority_order and tool != "smart_tool":
+                priority_order.append(tool)
+
+        return priority_order
 ########################################################################################################################
 ########################################################################################################################
