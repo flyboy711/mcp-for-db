@@ -8,6 +8,7 @@ from .get_table_infos import GetDatabaseInfo, GetTableStats, CheckTableConstrain
 from .get_mysql_health import GetDBHealthRunning, GetDBHealthIndexUsage, GetProcessList
 from .switch_database import SwitchDatabase
 from .use_prompt import DynamicQueryPrompt
+from .tools_enhance import SmartTool
 
 __all__ = [
     "ExecuteSQL",
@@ -28,4 +29,5 @@ __all__ = [
     "CheckTableConstraints",
     "GetQueryLogs",
     "DynamicQueryPrompt",
+    "SmartTool",
 ]

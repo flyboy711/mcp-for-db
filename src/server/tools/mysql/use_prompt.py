@@ -2,7 +2,6 @@ import json
 from typing import Dict, Any, Sequence
 
 import numpy as np
-from charset_normalizer.md import annotations
 from mcp.types import TextContent, Tool
 import logging
 
