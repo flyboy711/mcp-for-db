@@ -1,17 +1,14 @@
 # 工具描述增强配置
-import os
-from pathlib import Path
-
 ENHANCED_DESCRIPTIONS = {
     "dynamic_query_prompt": (
         "通过动态参数生成提示词模板，主要是为支持告警/隐患/性能监控的智能查询服务，其他查询可不使用该工具"
         "执行复杂的监控数据查询，支持告警、隐患、性能指标的统一查询接口。"
         "使用参数化模板处理时间范围、TopN、分组聚合等复杂查询需求。"
         "适用于包含以下元素的查询："
-        "- 时间范围（今天/最近7天/本月）"
-        "- TopN结果（Top10/Top20）"
-        "- 告警/隐患/性能指标（CPU/MEM）"
-        "- 分组聚合（按业务域/负责人分组）"
+        "- 时间范围（今天/最近7天/本月）,比如，time_range: '今天' "
+        "- top_k 结果，比如，top_k:10/top_k:20"
+        "- 告警/隐患/性能指标（CPU/MEM）,比如，monitor_type:'告警' "
+        "- 分组聚合（按业务域/负责人分组）,比如，filters: ['业务域=支付']"
         "- 复杂筛选条件（多条件组合）"
     ),
     "get_table_name": (
@@ -86,9 +83,3 @@ ENHANCED_DESCRIPTIONS = {
         "适用于开场白提示词：大模型一开始时优先选择该工具"
     )
 }
-
-if __name__ == "__main__":
-    CACHE_DIR = Path(__file__).parent.parent.parent.parent / "files/vector_cache"
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-
-    print(CACHE_DIR)

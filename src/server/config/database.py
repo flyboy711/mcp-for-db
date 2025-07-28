@@ -68,21 +68,6 @@ class DatabaseManager:
 
         logger.info("数据库管理器初始化完成")
 
-    # def __del__(self):
-    #     """析构函数，确保连接池被关闭"""
-    #     if self._pool and not self._pool.closed:
-    #         try:
-    #             # 尝试同步关闭连接池
-    #             loop = asyncio.get_event_loop()
-    #             if loop.is_running():
-    #                 loop.create_task(self.close_pool())
-    #             else:
-    #                 loop.run_until_complete(self.close_pool())
-    #         except Exception:
-    #             # 如果事件循环不可用，直接关闭
-    #             self._pool.close()
-    #             logger.warning("在析构函数中强制关闭连接池")
-
     @property
     def state(self) -> DatabaseConnectionState:
         """返回当前连接池状态"""
@@ -264,6 +249,16 @@ class DatabaseManager:
             return
 
         logger.info("关闭数据库连接池...")
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_closed():
+                logger.warning("时间循环已关闭，跳过等待")
+                self._pool.close()  # 只做标记关闭
+                return
+        except RuntimeError as e:
+            self._pool.close()
+            return
+
         try:
             # 正确关闭连接池
             self._pool.close()

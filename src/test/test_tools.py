@@ -15,31 +15,31 @@ async def main_tools():
         ret = await getDBHealthRunning.run_tool({"table_name": "test_table"})
         print(ret)
 
-        checkTableConstraints = CheckTableConstraints()
-        ret = await checkTableConstraints.run_tool({
-            "table_name": "t_users",
-        })
-        print(ret)
-
-        getDatabaseTables = GetDatabaseTables()
-        ret = await getDatabaseTables.run_tool({
-            "include_empty_comments": True,
-        })
-        print(ret)
-
-        analyzeTableStats = GetTableStats()
-        ret = await analyzeTableStats.run_tool({
-            "table_name": "t_users",
-        })
-        print(ret)
-
-        tool = GetDatabaseInfo()
-        ret = await tool.run_tool({"include_connection_info": True})
-        print(ret)
-
-        tool = GetTableDesc()
-        ret = await tool.run_tool({"text": "t_users"})
-        print(ret)
+        # checkTableConstraints = CheckTableConstraints()
+        # ret = await checkTableConstraints.run_tool({
+        #     "table_name": "t_users",
+        # })
+        # print(ret)
+        #
+        # getDatabaseTables = GetDatabaseTables()
+        # ret = await getDatabaseTables.run_tool({
+        #     "include_empty_comments": True,
+        # })
+        # print(ret)
+        #
+        # analyzeTableStats = GetTableStats()
+        # ret = await analyzeTableStats.run_tool({
+        #     "table_name": "t_users",
+        # })
+        # print(ret)
+        #
+        # tool = GetDatabaseInfo()
+        # ret = await tool.run_tool({"include_connection_info": True})
+        # print(ret)
+        #
+        # tool = GetTableDesc()
+        # ret = await tool.run_tool({"text": "t_users"})
+        # print(ret)
 
 
     finally:
@@ -146,7 +146,7 @@ async def test_main_use_prompt_tools():
         parsed_params = {
             "monitor_type": "CPU",
             "time_range": "最近7天",
-            "top_k": 20,
+            "top_k": "20",
             "filters": ["业务域=支付"],
             "sort_by": "峰值 DESC"
         }

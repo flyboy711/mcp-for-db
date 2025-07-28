@@ -4,6 +4,7 @@ import logging
 import os
 from collections.abc import AsyncIterator
 from dotenv import load_dotenv
+from server.common import VectorCacheManager
 from starlette.responses import Response
 import click
 import uvicorn
@@ -19,7 +20,7 @@ from starlette.types import Scope, Receive, Send
 from server.config import SessionConfigManager
 from server.config.database import DatabaseManager
 from server.config.dbconfig import EnvFileManager
-from server.config.request_context import RequestContext
+from server.config.request_context import RequestContext, get_current_database_manager
 from server.resources import QueryLogResource
 from server.tools.mysql.base import ToolRegistry
 from server.prompts.base import PromptRegistry
@@ -54,6 +55,20 @@ async def initialize_global_resources():
         # 其他全局资源初始化: 比如日志资源、数据库白皮书资源
         QueryLogResource.start_flush_thread()
 
+        # 预热embedding模型和常见缓存
+        # 预加载模型
+        VectorCacheManager.preload_model()
+
+        # 预热常见查询
+        common_queries = [
+            "查询最近7天的CPU使用率",
+            "获取今天的Top10告警",
+            "分析本月磁盘使用趋势",
+            "查找用户表对应的物理表名",
+            "优化这个SQL查询的性能"
+        ]
+        VectorCacheManager.warmup_cache(common_queries)
+
         logger.info("所有资源初始化完成")
         resources_initialized = True
     except Exception as e:
@@ -71,6 +86,8 @@ async def close_global_resources():
 
     logger.info("开始关闭所有资源")
     try:
+        db = get_current_database_manager()
+        await db.close_pool()
         # 关闭其他全局资源
         QueryLogResource.stop_flush_thread()
     except Exception as e:

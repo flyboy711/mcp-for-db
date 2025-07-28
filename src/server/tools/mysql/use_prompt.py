@@ -1,6 +1,9 @@
-from typing import Dict, Any
-from mcp import Tool
-from mcp.types import TextContent
+import json
+from typing import Dict, Any, Sequence
+
+import numpy as np
+from charset_normalizer.md import annotations
+from mcp.types import TextContent, Tool
 import logging
 
 from server.tools.mysql.base import BaseHandler
@@ -41,7 +44,7 @@ class DynamicQueryPrompt(BaseHandler):
             }
         )
 
-    async def run_tool(self, arguments: Dict[str, Any]) -> TextContent:
+    async def run_tool(self, arguments: Dict[str, Any]) -> Sequence[TextContent]:
         """执行动态提示词编排"""
         user_query = arguments.get("user_query", "")
         parsed_params = arguments.get("parsed_params", {})
@@ -54,16 +57,14 @@ class DynamicQueryPrompt(BaseHandler):
 
         if similar_query:
             query_hash, cache_data = similar_query
+            similarity = cache_data["similarity"]
+            if isinstance(similarity, np.float32):
+                similarity = float(similarity)
+
             logger.info(f"缓存命中: {query_hash} (相似度: {cache_data['similarity']:.4f})")
-            return TextContent(
-                type="text",
-                text=cache_data["prompt_text"],
-                annotations={
-                    "cache_hit": True,
-                    "query_hash": query_hash,
-                    "similarity": cache_data["similarity"]
-                }
-            )
+
+            return [TextContent(type="text", text=json.dumps(cache_data["prompt_text"], indent=2, ensure_ascii=False)
+                                , annotations={"cache_hit": True, "similarity": similarity, "query_hash": query_hash})]
 
         # 2. 使用封装的提示词生成器
         prompt_generator = MonitoringPromptGenerator(user_query, parsed_params)
@@ -74,7 +75,7 @@ class DynamicQueryPrompt(BaseHandler):
         # 4. 保存到缓存
         VectorCacheManager.save_params(user_query, parsed_params, prompt_text)
 
-        return TextContent(type="text", text=prompt_text)
+        return [TextContent(type="text", text=json.dumps(prompt_text, indent=2, ensure_ascii=False))]
 
 ########################################################################################################################
 ########################################################################################################################

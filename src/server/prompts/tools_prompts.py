@@ -1,12 +1,11 @@
 from typing import Dict, Any, Tuple
 import re
 import datetime
-from server.common.tools import ENHANCED_DESCRIPTIONS
 from server.common.prompts import MONITOR_CONFIGS
 
 
 class MonitoringPromptGenerator:
-    """提示词生成器: 依赖大模型解析的参数"""
+    """提示词生成器"""
 
     def __init__(self, user_query: str, parsed_params: Dict[str, Any]):
         """初始化提示词生成器"""
@@ -56,12 +55,12 @@ class MonitoringPromptGenerator:
         date_range = self._calculate_date_range(time_range)
 
         # 获取工具描述
-        tool_descriptions = "\n".join(
-            f"- {name}: {desc}"
-            for name, desc in ENHANCED_DESCRIPTIONS.items()
-        )
+        # tool_descriptions = "\n".join(
+        #     f"- {name}: {desc}"
+        #     for name, desc in ENHANCED_DESCRIPTIONS.items()
+        # )
 
-        # 组装编排提示词
+        # 组装宏观编排提示词
         prompt = f"""
         ## 智能监控查询工作流编排
         **原始查询**: {self.user_query}
@@ -74,7 +73,6 @@ class MonitoringPromptGenerator:
         - **排序规则**: {sort_by if sort_by else config['default_sort']}
         {f"- **分组维度**: {group_by}" if group_by else ""}
         {f"- **时间粒度**: {granularity}" if granularity else ""}
-
 
         ### 工作流编排指南
         1. **表发现阶段**:
@@ -107,6 +105,7 @@ class MonitoringPromptGenerator:
         ### 输出要求
         - 可视化类型: {config['default_viz']}
         - 时间格式化: `YYYY-MM-DD HH:MI:SS`
+        - 返回格式：以 MarkDown 格式返回
         - 安全限制: 最多返回100行
 
         请根据以上指南编排工具调用链并生成优化SQL!
