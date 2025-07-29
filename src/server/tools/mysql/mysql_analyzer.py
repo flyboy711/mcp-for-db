@@ -2,6 +2,8 @@ import logging
 from typing import Dict, Any, Sequence
 from mcp import Tool
 from mcp.types import TextContent
+
+from server.common import ENHANCED_DESCRIPTIONS
 from server.tools.mysql.base import BaseHandler
 from server.tools.mysql import ExecuteSQL
 from server.utils.logger import get_logger, configure_logger
@@ -14,10 +16,7 @@ logger.setLevel(logging.WARNING)
 ########################################################################################################################
 class AnalyzeQueryPerformance(BaseHandler):
     name = "analyze_query_performance"
-    description = (
-        "分析SQL查询的性能特征，包括执行时间、资源使用等"
-        "(Analyze SQL query performance characteristics, including execution time, resource usage, etc.)"
-    )
+    description = ENHANCED_DESCRIPTIONS.get("analyze_query_performance")
 
     def get_tool_description(self) -> Tool:
         return Tool(

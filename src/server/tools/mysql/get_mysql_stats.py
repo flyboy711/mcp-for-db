@@ -2,6 +2,8 @@ import json
 import logging
 import re
 from typing import Dict, Any, Sequence, Union, List
+
+from server.common import ENHANCED_DESCRIPTIONS
 from server.tools.mysql.base import BaseHandler
 from mcp import Tool
 from mcp.types import TextContent
@@ -17,9 +19,7 @@ logger.setLevel(logging.WARNING)
 class CollectTableStats(BaseHandler):
     """收集表的元数据、统计信息和数据分布情况的工具"""
     name = "collect_table_stats"
-    description = (
-        "收集指定表的元数据、统计信息 (Collects metadata, statistics)"
-    )
+    description = ENHANCED_DESCRIPTIONS.get("collect_table_stats")
 
     def get_tool_description(self) -> Tool:
         return Tool(

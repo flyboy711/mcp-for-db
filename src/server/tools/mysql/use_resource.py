@@ -5,6 +5,7 @@ from typing import Dict, Any, Sequence
 from mcp import Tool
 from mcp.types import TextContent
 
+from server.common import ENHANCED_DESCRIPTIONS
 from server.resources import QueryLogResource
 from server.tools.mysql.base import BaseHandler
 from server.utils.logger import get_logger, configure_logger
@@ -15,11 +16,9 @@ logger.setLevel(logging.WARNING)
 
 
 class GetQueryLogs(BaseHandler):
-    """获取查询日志工具"""
+    """获取工具历史查询SQL工具"""
     name = "get_query_logs"
-    description = (
-        "获取指定工具的历史查询记录，可用于分析工具使用情况和查询模式"
-    )
+    description = ENHANCED_DESCRIPTIONS.get("get_query_logs")
 
     def get_tool_description(self) -> Tool:
         return Tool(

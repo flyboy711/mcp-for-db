@@ -3,6 +3,8 @@ from typing import Dict, Any, Sequence, List, Optional, Tuple
 from dataclasses import dataclass
 import csv
 from io import StringIO
+
+from server.common import ENHANCED_DESCRIPTIONS
 from server.utils.logger import get_logger, configure_logger
 from mcp import Tool
 from mcp.types import TextContent
@@ -136,7 +138,7 @@ class ExecuteSQL(BaseHandler):
     """安全可靠的 MySQL SQL 执行工具（使用DatabaseManager）"""
 
     name = "sql_executor"
-    description = "在MySQL数据库上执行SQL (目前仅支持单条SQL执行)"
+    description = ENHANCED_DESCRIPTIONS.get("sql_executor")
 
     # 结果集最大行数限制
     MAX_RESULT_ROWS = 10000
@@ -145,10 +147,7 @@ class ExecuteSQL(BaseHandler):
         """获取工具描述"""
         return Tool(
             name=self.name,
-            description=(
-                f"{self.description}. 集成了SQL安全分析器、范围检查和权限控制。"
-                "只允许使用安全的参数化查询防止SQL注入攻击。"
-            ),
+            description=self.description,
             inputSchema={
                 "type": "object",
                 "properties": {

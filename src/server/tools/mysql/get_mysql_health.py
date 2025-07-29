@@ -1,5 +1,7 @@
 import logging
 from typing import Dict, Any, Sequence
+
+from server.common import ENHANCED_DESCRIPTIONS
 from server.config.request_context import get_current_database_manager
 from server.utils.logger import configure_logger, get_logger
 from mcp import Tool
@@ -15,9 +17,7 @@ logger.setLevel(logging.WARNING)
 ########################################################################################################################
 class GetDBHealthRunning(BaseHandler):
     name = "get_db_health_running"
-    description = (
-        "获取当前 MySQL 的健康状态(Analyze MySQL health status )"
-    )
+    description = ENHANCED_DESCRIPTIONS.get("get_db_health_running")
 
     def get_tool_description(self) -> Tool:
         return Tool(
@@ -142,11 +142,7 @@ class GetDBHealthRunning(BaseHandler):
 ########################################################################################################################
 class GetDBHealthIndexUsage(BaseHandler):
     name = "get_db_health_index_usage"
-    description = (
-            "获取当前连接的 MySQL 库的索引使用情况,包含冗余索引情况、性能较差的索引情况、未使用索引且查询时间大于30秒top10情况"
-            + "(Get the index usage of the currently connected mysql database, including redundant index situations, "
-            + "poorly performing index situations, and the top 10 unused index situations with query times greater than 30 seconds)"
-    )
+    description = ENHANCED_DESCRIPTIONS.get("get_db_health_index_usage")
 
     def get_tool_description(self) -> Tool:
         return Tool(
@@ -237,7 +233,7 @@ class GetDBHealthIndexUsage(BaseHandler):
 ########################################################################################################################
 class GetProcessList(BaseHandler):
     name = "get_process_list"
-    description = "获取当前进程列表(Get current process list)"
+    description = ENHANCED_DESCRIPTIONS.get("get_process_list")
 
     def get_tool_description(self) -> Tool:
         return Tool(

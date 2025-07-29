@@ -138,13 +138,13 @@ class WorkflowOrchestrator:
 ########################################################################################################################
 ########################################################################################################################
 class ToolSelector:
-    """工具选择器 - 智能工具内部使用"""
+    """工具选择器 - 编排工具内部使用"""
 
     # 工具优先级映射（从高到低）
     TOOL_PRIORITY = {
-        "high": ["sql_executor", "get_query_logs"],
-        "medium": ["analyze_query_performance", "collect_table_stats", "get_db_health_index_usage"],
-        "low": ["get_table_name", "get_table_desc", "get_table_index", "get_table_stats"]
+        "high": ["sql_executor"],
+        "medium": ["get_table_name", "get_table_desc", "get_table_index", "get_table_stats"],
+        "low": ["analyze_query_performance", "collect_table_stats", "get_db_health_index_usage"]
     }
 
     # 工具类别映射
@@ -210,12 +210,12 @@ class ToolSelector:
             if tool in recommended_tools and tool != "smart_tool":
                 return tool
 
-        # 2. 其次选择分析类工具
+        # 2. 其次选择元数据类工具
         for tool in ToolSelector.TOOL_PRIORITY["medium"]:
             if tool in recommended_tools and tool != "smart_tool":
                 return tool
 
-        # 3. 最后选择元数据类工具
+        # 3. 最后选择分析类工具
         for tool in ToolSelector.TOOL_PRIORITY["low"]:
             if tool in recommended_tools and tool != "smart_tool":
                 return tool

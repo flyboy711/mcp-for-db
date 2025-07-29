@@ -3,6 +3,7 @@ from typing import Dict, Any, Sequence
 from mcp import Tool
 from mcp.types import TextContent
 
+from server.common import ENHANCED_DESCRIPTIONS
 from server.tools.mysql.base import BaseHandler
 from server.utils.logger import get_logger, configure_logger
 
@@ -27,7 +28,7 @@ async def _reinitialize_db_pool(db_manager) -> None:
 
 class SwitchDatabase(BaseHandler):
     name = "switch_database"
-    description = "动态切换数据库连接配置(Dynamically switch database connection configuration)"
+    description = ENHANCED_DESCRIPTIONS.get("switch_database")
 
     # 安全参数设置
     MAX_HOST_LENGTH = 128

@@ -3,13 +3,13 @@ from typing import Dict, Any, Sequence
 from mcp import Tool
 from mcp.types import TextContent
 from pypinyin import pinyin, Style
-from .base import BaseHandler
+from server.tools.mysql.base import BaseHandler
+from server.common.tools import ENHANCED_DESCRIPTIONS
+
 
 class GetChineseInitials(BaseHandler):
     name = "get_chinese_initials"
-    description = (
-        "创建表结构时，将中文字段名转换为拼音首字母字段"
-    )
+    description = ENHANCED_DESCRIPTIONS.get("get_chinese_initials")
 
     def get_tool_description(self) -> Tool:
         return Tool(

@@ -1,6 +1,7 @@
 import logging
 from typing import Dict, Sequence, Any
 
+from server.common import ENHANCED_DESCRIPTIONS
 from server.config.request_context import get_current_database_manager
 from server.utils.logger import configure_logger, get_logger
 from mcp import Tool
@@ -15,9 +16,7 @@ logger.setLevel(logging.WARNING)
 
 class GetTableName(BaseHandler):
     name = "get_table_name"
-    description = (
-        "根据表中文名或表描述搜索数据库中对应的表名(Search for table names in the database based on table comments and descriptions )"
-    )
+    description = ENHANCED_DESCRIPTIONS.get("get_table_name")
 
     def get_tool_description(self) -> Tool:
         return Tool(
@@ -73,9 +72,7 @@ class GetTableName(BaseHandler):
 ########################################################################################################################
 class GetTableDesc(BaseHandler):
     name = "get_table_desc"
-    description = (
-        "根据表名搜索数据库中对应的表字段,支持多表查询(Search for table structures in the database based on table names, supporting multi-table queries)"
-    )
+    description = ENHANCED_DESCRIPTIONS.get("get_table_desc")
 
     def get_tool_description(self) -> Tool:
         return Tool(
@@ -136,9 +133,7 @@ class GetTableDesc(BaseHandler):
 ########################################################################################################################
 class GetTableIndex(BaseHandler):
     name = "get_table_index"
-    description = (
-        "根据表名搜索数据库中对应的表索引,支持多表查询(Search for table indexes in the database based on table names, supporting multi-table queries)"
-    )
+    description = ENHANCED_DESCRIPTIONS.get("get_table_index")
 
     def get_tool_description(self) -> Tool:
         return Tool(
@@ -197,9 +192,7 @@ class GetTableIndex(BaseHandler):
 ########################################################################################################################
 class GetTableLock(BaseHandler):
     name = "get_table_lock"
-    description = (
-        "获取当前 MySQL 服务器行级锁、表级锁情况(Check if there are row-level locks or table-level locks in the current MySQL server  )"
-    )
+    description = ENHANCED_DESCRIPTIONS.get("get_table_lock")
 
     def get_tool_description(self) -> Tool:
         return Tool(
@@ -303,7 +296,7 @@ class GetTableLock(BaseHandler):
 ########################################################################################################################
 class GetDatabaseInfo(BaseHandler):
     name = "get_database_info"
-    description = "获取数据库基本信息(Get basic database information)"
+    description = ENHANCED_DESCRIPTIONS.get("get_database_info")
 
     def get_tool_description(self) -> Tool:
         return Tool(
@@ -375,7 +368,7 @@ class GetDatabaseInfo(BaseHandler):
 ########################################################################################################################
 class GetDatabaseTables(BaseHandler):
     name = "get_database_tables"
-    description = "获取数据库所有表和对应的表注释(Get all tables and their comments in the database)"
+    description = ENHANCED_DESCRIPTIONS.get("get_database_tables")
 
     def get_tool_description(self) -> Tool:
         return Tool(
@@ -428,7 +421,7 @@ class GetDatabaseTables(BaseHandler):
 ########################################################################################################################
 class GetTableStats(BaseHandler):
     name = "get_table_stats"
-    description = "分析表统计信息和列统计信息(Analyze table statistics and column statistics)"
+    description = ENHANCED_DESCRIPTIONS.get("get_table_stats")
 
     def get_tool_description(self) -> Tool:
         return Tool(
@@ -507,7 +500,7 @@ class GetTableStats(BaseHandler):
                     "parameters": columns_params,
                     "tool_name": "get_table_stats"
                 })
-                return stats_result + columns_result
+                return list(stats_result) + list(columns_result)
             else:
                 return stats_result
 
@@ -520,7 +513,7 @@ class GetTableStats(BaseHandler):
 ########################################################################################################################
 class CheckTableConstraints(BaseHandler):
     name = "check_table_constraints"
-    description = "检查表约束信息(Check table constraints)"
+    description = ENHANCED_DESCRIPTIONS.get("check_table_constraints")
 
     def get_tool_description(self) -> Tool:
         return Tool(
@@ -631,7 +624,7 @@ class CheckTableConstraints(BaseHandler):
                             "tool_name": "check_table_constraints"
                         })
                         results.extend(check_result)
-                    except Exception:
+                    except RuntimeError:
                         logger.warning(f"检查约束查询失败: {e}")
 
             return results

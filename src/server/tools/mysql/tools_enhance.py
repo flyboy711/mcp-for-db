@@ -2,6 +2,8 @@ import logging
 from typing import Dict, Any, Sequence
 from mcp import Tool
 from mcp.types import TextContent
+
+from server.common import ENHANCED_DESCRIPTIONS
 from server.tools.mysql.base import ToolSelector
 from server.tools.mysql.base import WorkflowOrchestrator
 from server.tools.mysql.base import BaseHandler, ToolRegistry
@@ -13,9 +15,9 @@ logger.setLevel(logging.WARNING)
 
 
 class SmartTool(BaseHandler):
-    """支持多工具协同工作的智能工具"""
+    """支持多工具协同工作的工具"""
     name = "smart_tool"
-    description = "根据用户提问，大模型进行参数解析，然后使用该工具会挑选合适的多个工具协同完成任务"
+    description = ENHANCED_DESCRIPTIONS.get("smart_tool")
 
     # 缓存工具描述以避免递归
     _cached_description = None
@@ -75,12 +77,12 @@ class SmartTool(BaseHandler):
         return tool_desc
 
     async def run_tool(self, arguments: Dict[str, Any]) -> Sequence[TextContent]:
-        """执行智能工具编排，失败时回退到其他工具"""
+        """执行工具编排，失败时回退到其他工具"""
         try:
             # 尝试使用 smart_tool 执行
             return await self._execute_smart_tool(arguments)
         except Exception as e:
-            logger.error(f"智能工具执行失败: {str(e)}")
+            logger.error(f"工具编排执行失败: {str(e)}")
             # 回退到其他工具
             return await self._fallback_to_other_tools(arguments)
 
@@ -121,12 +123,12 @@ class SmartTool(BaseHandler):
         try:
             return await ToolRegistry.execute_workflow(workflow)
         except Exception as e:
-            logger.exception(f"智能编排失败: {str(e)}")
-            raise RuntimeError(f"智能编排失败: {str(e)}")
+            logger.exception(f"工具编排失败: {str(e)}")
+            raise RuntimeError(f"工具编排失败: {str(e)}")
 
     async def _fallback_to_other_tools(self, arguments: Dict[str, Any]) -> Sequence[TextContent]:
         """回退到其他工具执行"""
-        logger.warning("智能工具失败，尝试回退到其他工具")
+        logger.warning("工具编排失败，尝试回退到其他工具")
 
         # 1. 尝试直接使用 SQL 执行器
         if "sql_executor.query" in arguments:
