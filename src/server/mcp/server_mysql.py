@@ -36,7 +36,7 @@ resources_initialized = False
 # 初始化服务器
 app = Server("mcp-for-db")
 logger = get_logger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.WARNING)
 
 
 async def initialize_global_resources():
