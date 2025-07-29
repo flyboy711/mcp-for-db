@@ -1,4 +1,5 @@
 import logging
+import weakref
 
 import aiomysql
 import asyncio
@@ -40,6 +41,8 @@ class DatabasePermissionError(Exception):
 
 class DatabaseManager:
     """数据库管理器，集成连接池、安全检查和范围控制"""
+    # 跟踪所有实例
+    _all_instances = weakref.WeakSet()
 
     def __init__(self, session_config: SessionConfigManager):
         """
@@ -66,7 +69,57 @@ class DatabaseManager:
         if session_config.get('ENABLE_DATABASE_ISOLATION', False):
             self.database_checker = DatabaseScopeChecker(session_config)
 
+        # 添加到实例集合
+        DatabaseManager._all_instances.add(self)
         logger.info("数据库管理器初始化完成")
+
+    @classmethod
+    async def close_all_instances(cls):
+        """关闭所有数据库管理器实例的连接池"""
+        logger.info("关闭所有数据库连接池...")
+        for instance in list(cls._all_instances):
+            try:
+                await instance.close_pool()
+            except Exception as e:
+                logger.error(f"关闭数据库连接池失败: {str(e)}")
+
+    async def close_pool(self) -> None:
+        """安全关闭数据库连接池"""
+        if not self._pool or self._state in (DatabaseConnectionState.CLOSED, DatabaseConnectionState.UNINITIALIZED):
+            return
+
+        logger.info("关闭数据库连接池...")
+        try:
+            # 检查事件循环状态
+            try:
+                loop = asyncio.get_running_loop()
+                if loop.is_running():
+                    # 正常关闭流程
+                    self._pool.close()
+                    await self._pool.wait_closed()
+                    logger.info("连接池已安全关闭")
+                    self._state = DatabaseConnectionState.CLOSED
+                    return
+            except RuntimeError:
+                # 事件循环未运行或已关闭
+                pass
+
+            # 事件循环不可用时直接关闭
+            self._pool.close()
+            logger.warning("连接池被强制关闭（事件循环不可用）")
+        except RuntimeError as e:
+            if "Event loop is closed" in str(e):
+                logger.warning("事件循环已关闭，直接关闭连接池")
+                self._pool.close()
+            else:
+                logger.warning(f"连接池关闭时发生运行时错误: {str(e)}")
+        except asyncio.CancelledError:
+            logger.warning("连接池关闭操作被取消")
+        except Exception as e:
+            logger.exception(f"关闭连接池时出错: {str(e)}")
+        finally:
+            self._pool = None
+            self._state = DatabaseConnectionState.CLOSED
 
     @property
     def state(self) -> DatabaseConnectionState:
@@ -242,40 +295,6 @@ class DatabaseManager:
         # 如果重连次数过多，记录警告
         if self._reconnect_attempts > 3:
             logger.warning("数据库连接失败次数过多，请检查数据库配置和服务状态")
-
-    async def close_pool(self) -> None:
-        """安全关闭数据库连接池"""
-        if not self._pool or self._state in (DatabaseConnectionState.CLOSED, DatabaseConnectionState.UNINITIALIZED):
-            return
-
-        logger.info("关闭数据库连接池...")
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_closed():
-                logger.warning("时间循环已关闭，跳过等待")
-                self._pool.close()  # 只做标记关闭
-                return
-        except RuntimeError as e:
-            self._pool.close()
-            return
-
-        try:
-            # 正确关闭连接池
-            self._pool.close()
-            await self._pool.wait_closed()
-            logger.info("连接池已安全关闭")
-            self._state = DatabaseConnectionState.CLOSED
-        except RuntimeError as e:
-            if "Event loop is closed" in str(e):
-                logger.warning("无法安全关闭连接池：事件循环已结束")
-            else:
-                logger.warning(f"连接池关闭时发生运行时错误: {str(e)}")
-        except asyncio.CancelledError:
-            logger.warning("连接池关闭操作被取消")
-        except Exception as e:
-            logger.exception(f"关闭连接池时出错: {str(e)}")
-        finally:
-            self._pool = None
 
     @asynccontextmanager
     async def get_connection(self) -> AsyncGenerator[aiomysql.Connection, None]:

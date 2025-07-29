@@ -3,6 +3,8 @@ import contextlib
 import logging
 import os
 from collections.abc import AsyncIterator
+import signal
+
 from dotenv import load_dotenv
 from starlette.responses import Response
 import click
@@ -29,6 +31,9 @@ from server.oauth import OAuthMiddleware, login, login_page
 # 导入日志配置工具
 from server.utils.logger import configure_logger, get_logger
 from starlette.middleware import Middleware
+import warnings
+
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 # 定义全局资源初始化标识
 resources_initialized = False
@@ -71,8 +76,9 @@ async def close_global_resources():
 
     logger.info("开始关闭所有资源")
     try:
-        db = get_current_database_manager()
-        await db.close_pool()
+        # 关闭所有数据库连接池
+        await DatabaseManager.close_all_instances()
+
         # 关闭其他全局资源
         QueryLogResource.stop_flush_thread()
     except Exception as e:
@@ -188,7 +194,7 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> Sequence[TextConten
         raise
 
 
-###############################################################################################
+########################################################################################################################
 async def run_stdio():
     """运行标准输入输出模式的服务器
 
@@ -216,7 +222,7 @@ async def run_stdio():
                 db_manager = DatabaseManager(session_config)
 
                 # 设置请求上下文
-                with RequestContext(session_config, db_manager):
+                async with RequestContext(session_config, db_manager) as context:
                     await app.run(
                         read_stream,
                         write_stream,
@@ -231,9 +237,11 @@ async def run_stdio():
     finally:
         # 关闭资源
         await close_global_resources()
+        # 给数据库连接池额外时间关闭
+        await asyncio.sleep(0.5)
 
 
-###############################################################################################
+########################################################################################################################
 def run_sse():
     """运行SSE(Server-Sent Events)模式的服务器
 
@@ -258,9 +266,9 @@ def run_sse():
         db_manager = DatabaseManager(session_config)
 
         # 设置请求上下文
-        with RequestContext(session_config, db_manager):
+        async with RequestContext(session_config, db_manager):
             async with sse.connect_sse(
-                    request.scope, request.receive, request.send
+                    request.scope, request.receive, request._send
             ) as streams:
                 try:
                     await app.run(streams[0], streams[1], app.create_initialization_options())
@@ -281,6 +289,8 @@ def run_sse():
         finally:
             # 关闭资源
             await close_global_resources()
+            # 给数据库连接池额外时间关闭
+            await asyncio.sleep(0.5)
 
     starlette_app = Starlette(
         debug=True,
@@ -305,7 +315,7 @@ def run_sse():
     server.run()
 
 
-###############################################################################################
+########################################################################################################################
 def run_streamable_http(json_response: bool, oauth: bool):
     logger.info("启动Streamable HTTP模式服务器")
     session_manager = StreamableHTTPSessionManager(
@@ -338,7 +348,7 @@ def run_streamable_http(json_response: bool, oauth: bool):
                 db_manager = DatabaseManager(session_config)
 
                 # 设置请求上下文
-                with RequestContext(session_config, db_manager):
+                async with RequestContext(session_config, db_manager):
                     await session_manager.handle_request(scope, receive, send)
 
                 logger.info(f"HTTP请求处理完成 [method={scope['method']}, path={scope['path']}]")
@@ -392,6 +402,8 @@ def run_streamable_http(json_response: bool, oauth: bool):
     logger.info("Streamable HTTP服务器启动中 [host=0.0.0.0, port=3000]")
     server.run()
 
+
+########################################################################################################################
 
 @click.command()
 @click.option("--envfile", default=None, help="env file path")

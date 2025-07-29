@@ -62,7 +62,7 @@ pip install .
 mcp_for_db
 
 # 上传到仓库
-twine upload -r *** dist/*
+twine upload -r dewuPython dist/*
 ```
 
 配置环境变量： 创建一个 `.env` 文件，内容如下：
