@@ -3,7 +3,6 @@ import contextlib
 import logging
 import os
 from collections.abc import AsyncIterator
-import signal
 
 from dotenv import load_dotenv
 from starlette.responses import Response

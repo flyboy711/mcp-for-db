@@ -29,7 +29,7 @@ class SQLOperationException(SecurityException):
 
 
 class SQLInterceptor:
-    """增强的SQL操作拦截器，提供全面的SQL安全检查和拦截功能"""
+    """SQL操作拦截器，提供较为全面的SQL安全检查和拦截功能"""
 
     def __init__(self, session_config: SessionConfigManager):
         """

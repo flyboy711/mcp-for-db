@@ -12,8 +12,7 @@ logger.setLevel(logging.WARNING)
 
 class SQLParser:
     """
-    SQL 解析器，提供健壮的 SQL 解析和安全分析功能
-    增强了对各种 SQL 语句类型的识别能力
+    SQL 解析器，提供较为健壮的 SQL 解析和安全分析功能
     """
 
     def __init__(self, session_config: SessionConfigManager):
