@@ -2,9 +2,7 @@ import asyncio
 import re
 
 from server.tools.mysql import ExecuteSQL, CollectTableStats
-
 from server.config.request_context import get_current_database_manager
-
 from server.config import SessionConfigManager, DatabaseManager, RequestContext
 
 
@@ -114,7 +112,7 @@ async def main():
         # ret = AnalyzeQueryPerformance()
         ret = CollectTableStats()
         result = await ret.run_tool({
-            "table_name": "timeout_0"
+            "table_name": "t_users"
         })
 
         print(result)
@@ -122,28 +120,32 @@ async def main():
         await get_current_database_manager().close_pool()
 
 
-if __name__ == "__main__":
+async def main2():
     # 创建会话配置管理器
-    # session_config_1 = SessionConfigManager({
-    #     "MYSQL_HOST": "localhost",
-    #     "MYSQL_PORT": "13308",
-    #     "MYSQL_USER": "videx",
-    #     "MYSQL_PASSWORD": "password",
-    #     "MYSQL_DATABASE": "tpch_tiny"
-    # })
-
     session_config_1 = SessionConfigManager({
-        "MYSQL_HOST": "rm-uf6pyrv408i5f0gap.mysql.rds.aliyuncs.com",
-        "MYSQL_PORT": "3306",
-        "MYSQL_USER": "onedba",
-        "MYSQL_PASSWORD": "S9dKSCsdJm(mKd2",
-        "MYSQL_DATABASE": "du_trade_timeout_db_3"
+        "MYSQL_HOST": "localhost",
+        "MYSQL_PORT": "13308",
+        "MYSQL_USER": "videx",
+        "MYSQL_PASSWORD": "password",
+        "MYSQL_DATABASE": "tpch_tiny"
     })
+
+    # session_config_1 = SessionConfigManager({
+    #     "MYSQL_HOST": "rm-uf6pyrv408i5f0gap.mysql.rds.aliyuncs.com",
+    #     "MYSQL_PORT": "3306",
+    #     "MYSQL_USER": "onedba",
+    #     "MYSQL_PASSWORD": "S9dKSCsdJm(mKd2",
+    #     "MYSQL_DATABASE": "du_trade_timeout_db_3"
+    # })
 
     # 创建数据库管理器
     db_manager_1 = DatabaseManager(session_config_1)
 
     # 设置请求上下文
-    with RequestContext(session_config_1, db_manager_1):
-        asyncio.run(main())
-        # asyncio.run(main_tools())
+    async with RequestContext(session_config_1, db_manager_1):
+        await main()
+        # await main_tools()
+
+
+if __name__ == "__main__":
+    asyncio.run(main2())

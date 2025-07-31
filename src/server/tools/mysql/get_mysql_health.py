@@ -150,9 +150,7 @@ class GetDBHealthIndexUsage(BaseHandler):
             description=self.description,
             inputSchema={
                 "type": "object",
-                "properties": {
-
-                }
+                "properties": {}
             }
         )
 

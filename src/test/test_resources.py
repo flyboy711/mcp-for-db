@@ -30,7 +30,7 @@ async def test_resources():
     await get_current_database_manager().close_pool()
 
 
-if __name__ == "__main__":
+async def main2():
     # 获取当前文件所在目录的绝对路径
     current_dir = os.path.dirname(os.path.abspath(__file__))
     # 获取项目根目录
@@ -45,10 +45,9 @@ if __name__ == "__main__":
     db_manager = DatabaseManager(session_config)
 
     # 设置请求上下文
-    with RequestContext(session_config, db_manager):
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            loop.run_until_complete(test_resources())
-        finally:
-            loop.close()
+    async with RequestContext(session_config, db_manager):
+        await test_resources()
+
+
+if __name__ == "__main__":
+    asyncio.run(main2())

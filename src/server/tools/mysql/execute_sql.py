@@ -29,16 +29,13 @@ class SQLResult:
     affected_rows: int = 0
 
 
-async def execute_single_statement(query: str, params: list = None, stream_results: bool = False,
-                                   batch_size: int = 1000, tool_name: str = "sql_executor") -> SQLResult:
+async def execute_single_statement(query: str, params: list = None, tool_name: str = "sql_executor") -> SQLResult:
     """
     使用DatabaseManager执行单条SQL语句（兼容位置参数格式）
 
     Args:
         query: SQL查询语句，使用 ? 作为参数占位符
         params: 参数值列表（按位置对应占位符）
-        stream_results: 是否流式处理大型结果集
-        batch_size: 流式处理的批次大小
         tool_name: 调用的工具名称
     """
     # 参数预处理
@@ -70,19 +67,7 @@ async def execute_single_statement(query: str, params: list = None, stream_resul
         # 执行查询并获取结果
         db_manager = get_current_database_manager()
 
-        result = await db_manager.execute_query(
-            final_query,
-            params=params_dict,
-            stream_results=stream_results,
-            batch_size=batch_size
-        )
-
-        # 处理流式结果
-        if stream_results and hasattr(result, "__aiter__"):
-            collected_rows = []
-            async for batch in result:
-                collected_rows.extend(batch)
-            result = collected_rows
+        result = await db_manager.execute_query(final_query, params=params_dict)
 
         # 准备返回结果
         sql_result = SQLResult(success=True, message="执行成功")
@@ -135,7 +120,7 @@ async def execute_single_statement(query: str, params: list = None, stream_resul
 
 
 class ExecuteSQL(BaseHandler):
-    """安全可靠的 MySQL SQL 执行工具（使用DatabaseManager）"""
+    """安全可靠的 MySQL SQL 执行工具"""
 
     name = "sql_executor"
     description = ENHANCED_DESCRIPTIONS.get("sql_executor")
@@ -158,18 +143,8 @@ class ExecuteSQL(BaseHandler):
                     "parameters": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "参数值列表（按位置对应占位符）",
+                        "description": "要执行的SQL语句中的参数值列表（按位置顺序依次对应占位符）",
                         "default": []
-                    },
-                    "stream_results": {
-                        "type": "boolean",
-                        "description": "是否流式处理大型结果集（默认关闭）",
-                        "default": False
-                    },
-                    "batch_size": {
-                        "type": "integer",
-                        "description": "流式处理时每批次返回的行数（默认1000）",
-                        "default": 1000
                     },
                     "tool_name": {
                         "type": "string",
@@ -177,7 +152,7 @@ class ExecuteSQL(BaseHandler):
                         "default": "sql_executor"
                     }
                 },
-                "required": ["query"]
+                "required": ["query", "parameters"]
             }
         )
 
@@ -218,8 +193,6 @@ class ExecuteSQL(BaseHandler):
         """执行 SQL 工具主入口（使用DatabaseManager）"""
         query = arguments["query"].strip()
         params = arguments.get("parameters", [])
-        stream_results = arguments.get("stream_results", False)
-        batch_size = arguments.get("batch_size", 1000)
         tool_name = arguments.get("tool_name", "sql_executor")
 
         # 空查询检查
@@ -231,8 +204,6 @@ class ExecuteSQL(BaseHandler):
             sql_result = await execute_single_statement(
                 query=query,
                 params=params,
-                stream_results=stream_results,
-                batch_size=batch_size,
                 tool_name=tool_name
             )
 

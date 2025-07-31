@@ -20,7 +20,7 @@ from starlette.types import Scope, Receive, Send
 from server.config import SessionConfigManager
 from server.config.database import DatabaseManager
 from server.config.dbconfig import EnvFileManager
-from server.config.request_context import RequestContext, get_current_database_manager
+from server.config.request_context import RequestContext
 from server.resources import QueryLogResource
 from server.tools.mysql.base import ToolRegistry
 from server.prompts.base import PromptRegistry
@@ -221,7 +221,7 @@ async def run_stdio():
                 db_manager = DatabaseManager(session_config)
 
                 # 设置请求上下文
-                async with RequestContext(session_config, db_manager) as context:
+                async with RequestContext(session_config, db_manager):
                     await app.run(
                         read_stream,
                         write_stream,

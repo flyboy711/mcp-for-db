@@ -1,6 +1,5 @@
 import logging
 from typing import Dict, Sequence, Any
-
 from server.common import ENHANCED_DESCRIPTIONS
 from server.config.request_context import get_current_database_manager
 from server.utils.logger import configure_logger, get_logger
@@ -81,12 +80,12 @@ class GetTableDesc(BaseHandler):
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "text": {
+                    "table_name": {
                         "type": "string",
                         "description": "要搜索的表名"
                     }
                 },
-                "required": ["text"]
+                "required": ["table_name"]
             }
         )
 
@@ -103,10 +102,10 @@ class GetTableDesc(BaseHandler):
             - 结果以CSV格式返回，包含列名和数据
         """
         try:
-            if "text" not in arguments:
+            if "table_name" not in arguments:
                 raise ValueError("缺少查询语句")
 
-            text = arguments["text"]
+            table_name = arguments["table_name"]
 
             db_manager = get_current_database_manager()
             config = db_manager.get_current_config()
@@ -114,7 +113,7 @@ class GetTableDesc(BaseHandler):
             execute_sql = ExecuteSQL()
 
             # 将输入的表名按逗号分割成列表
-            table_names = [name.strip() for name in text.split(',')]
+            table_names = [name.strip() for name in table_name.split(',')]
             # 构建IN条件
             table_condition = "','".join(table_names)
 
@@ -142,12 +141,12 @@ class GetTableIndex(BaseHandler):
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "text": {
+                    "table_name": {
                         "type": "string",
                         "description": "要搜索的表名"
                     }
                 },
-                "required": ["text"]
+                "required": ["table_name"]
             }
         )
 
@@ -164,10 +163,10 @@ class GetTableIndex(BaseHandler):
             - 结果以CSV格式返回，包含列名和数据
         """
         try:
-            if "text" not in arguments:
+            if "table_name" not in arguments:
                 raise ValueError("缺少查询语句")
 
-            text = arguments["text"]
+            table_name = arguments["table_name"]
 
             db_manager = get_current_database_manager()
             config = db_manager.get_current_config()
@@ -175,7 +174,7 @@ class GetTableIndex(BaseHandler):
             execute_sql = ExecuteSQL()
 
             # 将输入的表名按逗号分割成列表
-            table_names = [name.strip() for name in text.split(',')]
+            table_names = [name.strip() for name in table_name.split(',')]
             # 构建IN条件
             table_condition = "','".join(table_names)
 
@@ -226,7 +225,7 @@ class GetTableLock(BaseHandler):
             result = await db_manager.execute_query("SELECT VERSION() AS version")
             version_str = result[0]['version'] if result else ""
             return int(version_str.split('.')[0]) if '.' in version_str else 0
-        except Exception:
+        except RuntimeError:
             return 0
 
     async def get_unified_lock_info(self) -> Sequence[TextContent]:
@@ -377,11 +376,6 @@ class GetDatabaseTables(BaseHandler):
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "include_empty_comments": {
-                        "type": "boolean",
-                        "description": "是否包含无注释的表",
-                        "default": True
-                    }
                 }
             }
         )
@@ -389,8 +383,7 @@ class GetDatabaseTables(BaseHandler):
     async def run_tool(self, arguments: Dict[str, Any]) -> Sequence[TextContent]:
         """获取数据库所有表和表注释"""
         try:
-            include_empty = arguments.get("include_empty_comments", True)
-
+            include_empty = True
             db_manager = get_current_database_manager()
             config = db_manager.get_current_config()
 
@@ -434,11 +427,6 @@ class GetTableStats(BaseHandler):
                         "type": "string",
                         "description": "要分析的表名"
                     },
-                    "include_column_stats": {
-                        "type": "boolean",
-                        "description": "是否包含列统计信息",
-                        "default": True
-                    }
                 },
                 "required": ["table_name"]
             }
@@ -448,8 +436,7 @@ class GetTableStats(BaseHandler):
         """分析表统计信息"""
         try:
             table_name = arguments["table_name"]
-            include_columns = arguments.get("include_column_stats", True)
-
+            include_columns = True
             db_manager = get_current_database_manager()
             config = db_manager.get_current_config()
 
@@ -525,16 +512,6 @@ class CheckTableConstraints(BaseHandler):
                     "table_name": {
                         "type": "string",
                         "description": "要检查的表名"
-                    },
-                    "include_foreign_keys": {
-                        "type": "boolean",
-                        "description": "是否包含外键约束",
-                        "default": True
-                    },
-                    "include_check_constraints": {
-                        "type": "boolean",
-                        "description": "是否包含检查约束",
-                        "default": True
                     }
                 },
                 "required": ["table_name"]
@@ -545,8 +522,8 @@ class CheckTableConstraints(BaseHandler):
         """检查表约束信息"""
         try:
             table_name = arguments["table_name"]
-            include_fk = arguments.get("include_foreign_keys", True)
-            include_checks = arguments.get("include_check_constraints", True)
+            include_fk = True
+            include_checks = True
 
             db_manager = get_current_database_manager()
             config = db_manager.get_current_config()

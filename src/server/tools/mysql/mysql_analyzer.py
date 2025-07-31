@@ -27,17 +27,12 @@ class AnalyzeQueryPerformance(BaseHandler):
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "要分析的SQL查询语句（仅支持SELECT查询）"
-                    },
-                    "iterations": {
-                        "type": "integer",
-                        "description": "执行次数（用于计算平均执行时间）",
-                        "default": 5
+                        "description": "要执行的SQL语句（使用 ? 作为参数占位符）（仅支持SELECT查询）"
                     },
                     "parameters": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "查询参数值",
+                        "description": "要执行的SQL语句中的参数值列表（按位置顺序依次对应占位符）",
                         "default": []
                     }
                 },
@@ -49,7 +44,7 @@ class AnalyzeQueryPerformance(BaseHandler):
         """分析查询性能"""
         try:
             query = arguments["query"].strip()
-            iterations = max(1, min(arguments.get("iterations", 5), 20))  # 限制1-20次
+            iterations = 5
             parameters = arguments.get("parameters", [])
 
             execute_sql = ExecuteSQL()
@@ -68,15 +63,6 @@ class AnalyzeQueryPerformance(BaseHandler):
             performance_data = await self.measure_performance(query, parameters, iterations)
             results.append(TextContent(type="text", text="\n=== 性能指标 ==="))
             results.append(TextContent(type="text", text=performance_data))
-
-            # 3. 执行SHOW PROFILE分析（如果可用）
-            try:
-                profile_result = await self.run_query_profile(query, parameters)
-                results.append(TextContent(type="text", text="\n=== 执行性能剖析 ==="))
-                results.append(TextContent(type="text", text=profile_result))
-            except Exception as e:
-                logger.warning(f"性能剖析不可用: {str(e)}")
-                results.append(TextContent(type="text", text="\n警告: 性能剖析功能不可用"))
 
             return results
 
@@ -137,39 +123,4 @@ class AnalyzeQueryPerformance(BaseHandler):
             f"平均执行时间: {avg_time:.6f} 秒\n"
             f"性能指标:\n{status_result[0].text if status_result else '无可用数据'}"
         )
-
-    async def run_query_profile(self, query: str, parameters: list) -> str:
-        """执行查询的性能剖析"""
-        execute_sql = ExecuteSQL()
-
-        # 启用性能剖析
-        await execute_sql.run_tool({"query": "SET profiling = 1", "tool_name": "analyze_query_performance"})
-
-        try:
-            # 执行查询
-            await execute_sql.run_tool({
-                "query": query,
-                "parameters": parameters,
-                "tool_name": "analyze_query_performance"
-            })
-
-            # 获取剖析结果
-            profile_query = "SHOW PROFILES"
-            profiles = await execute_sql.run_tool({"query": profile_query, "tool_name": "analyze_query_performance"})
-
-            if not profiles:
-                return "无性能剖析数据"
-
-            # 获取最后一个查询的详细剖析
-            last_query_id = profiles[0].text.split('\n')[-1].split()[0]
-            profile_detail = await execute_sql.run_tool({
-                "query": f"SHOW PROFILE FOR QUERY {last_query_id}", "tool_name": "analyze_query_performance"
-            })
-
-            return profile_detail[0].text if profile_detail else "无详细剖析数据"
-
-        finally:
-            # 禁用性能剖析
-            await execute_sql.run_tool({"query": "SET profiling = 0", "tool_name": "analyze_query_performance"})
-
 ########################################################################################################################

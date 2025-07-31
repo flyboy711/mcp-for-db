@@ -32,16 +32,16 @@ class CollectTableStats(BaseHandler):
                         "type": "string",
                         "description": "要收集统计信息的表名，多个表用逗号分隔"
                     },
-                    "deep_analysis": {
-                        "type": "boolean",
-                        "description": "是否执行深度分析（包括直方图统计等）",
-                        "default": False
-                    },
-                    "histogram_bins": {
-                        "type": "integer",
-                        "description": "直方图的箱数（深度分析时有效）",
-                        "default": 10
-                    }
+                    # "deep_analysis": {
+                    #     "type": "boolean",
+                    #     "description": "是否执行深度分析（包括直方图统计等）",
+                    #     "default": False
+                    # },
+                    # "histogram_bins": {
+                    #     "type": "integer",
+                    #     "description": "直方图的箱数（深度分析时有效）",
+                    #     "default": 10
+                    # }
                 },
                 "required": ["table_name"]
             }
@@ -54,8 +54,8 @@ class CollectTableStats(BaseHandler):
                 return [TextContent(type="text", text="错误: 缺少表名参数")]
 
             table_name = arguments["table_name"]
-            deep_analysis = arguments.get("deep_analysis", False)
-            histogram_bins = arguments.get("histogram_bins", 10)
+            # deep_analysis = arguments.get("deep_analysis", False)
+            # histogram_bins = arguments.get("histogram_bins", 10)
 
             # 收集元数据
             metadata = await self.collect_metadata(table_name)
@@ -117,7 +117,7 @@ class CollectTableStats(BaseHandler):
                     # 尝试解析为表格格式
                     else:
                         content = self.parse_tabular_data(item.text)
-                except Exception:
+                except RuntimeError:
                     # 尝试直接提取数字值
                     text = item.text.strip()
                     if re.match(r'^\d+$', text):

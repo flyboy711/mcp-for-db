@@ -4,16 +4,12 @@ from typing import Dict, Any
 from server.config import SessionConfigManager
 from server.config.database import DatabaseManager
 from server.config.request_context import RequestContext
+from server.utils.logger import get_logger, configure_logger
 
 # 配置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger("multi_user_test")
+logger = get_logger(__name__)
+configure_logger(log_filename="resources.log")
+logger.setLevel(logging.INFO)
 
 # 模拟用户配置
 USER_CONFIGS = {
@@ -45,7 +41,7 @@ async def execute_user_query(user_id: str, config: Dict[str, Any]) -> Dict[str, 
     db_manager = DatabaseManager(session_config)
 
     # 设置请求上下文
-    with RequestContext(session_config, db_manager):
+    async with RequestContext(session_config, db_manager):
         # 模拟执行查询
         try:
             # 确保连接池初始化

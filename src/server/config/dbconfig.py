@@ -319,7 +319,7 @@ class EnvFileManager:
 
     @staticmethod
     def update(update: dict, env_path: str = ".env") -> None:
-        """原子化更新.env文件 - 修复换行问题"""
+        """原子化更新.env文件"""
         # 读取现有内容
         lines = []
         if os.path.exists(env_path):
@@ -395,6 +395,9 @@ class EnvFileManager:
 
 # 示例使用
 if __name__ == "__main__":
+    print(get_env_type())
+    print(parse_risk_levels("LOW"))
+
     # 创建默认会话配置
     session_config = SessionConfigManager()
 

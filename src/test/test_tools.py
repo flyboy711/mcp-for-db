@@ -5,7 +5,7 @@ from server.config.request_context import get_current_database_manager, RequestC
 from server.tools.mysql.get_table_infos import GetDatabaseTables, GetTableDesc, GetDatabaseInfo, GetTableStats, \
     CheckTableConstraints, GetTableLock
 
-from server.tools.mysql import GetDBHealthRunning, SwitchDatabase, ExecuteSQL, SmartTool
+from server.tools.mysql import GetDBHealthRunning, SwitchDatabase, ExecuteSQL, SmartTool, GetTableIndex
 
 
 async def main_tools():
@@ -15,32 +15,37 @@ async def main_tools():
         ret = await getDBHealthRunning.run_tool({"table_name": "test_table"})
         print(ret)
 
-        # checkTableConstraints = CheckTableConstraints()
-        # ret = await checkTableConstraints.run_tool({
-        #     "table_name": "t_users",
-        # })
-        # print(ret)
-        #
-        # getDatabaseTables = GetDatabaseTables()
-        # ret = await getDatabaseTables.run_tool({
-        #     "include_empty_comments": True,
-        # })
-        # print(ret)
-        #
-        # analyzeTableStats = GetTableStats()
-        # ret = await analyzeTableStats.run_tool({
-        #     "table_name": "t_users",
-        # })
-        # print(ret)
-        #
-        # tool = GetDatabaseInfo()
-        # ret = await tool.run_tool({"include_connection_info": True})
-        # print(ret)
-        #
-        # tool = GetTableDesc()
-        # ret = await tool.run_tool({"text": "t_users"})
-        # print(ret)
+        checkTableConstraints = CheckTableConstraints()
+        ret = await checkTableConstraints.run_tool({
+            "table_name": "t_users",
+        })
+        print(ret)
 
+        getDatabaseTables = GetDatabaseTables()
+        ret = await getDatabaseTables.run_tool({})
+        print(ret)
+
+        analyzeTableStats = GetTableStats()
+        ret = await analyzeTableStats.run_tool({
+            "table_name": "t_users",
+        })
+        print(ret)
+
+        tool = GetDatabaseInfo()
+        ret = await tool.run_tool({"include_connection_info": True})
+        print(ret)
+
+        tool = GetTableDesc()
+        ret = await tool.run_tool({"table_name": "t_users"})
+        print(ret)
+
+        tool = GetTableIndex()
+        ret = await tool.run_tool({"table_name": "t_users"})
+        print(ret)
+
+        tool = GetDatabaseTables()
+        ret = await tool.run_tool({"table_name": "t_users"})
+        print(ret)
 
     finally:
         # 使用await调用异步方法
@@ -110,7 +115,7 @@ async def main_exe_sql(num: int = 1):
             # 使用实例调用 run_tool 方法
             result = await sql_executor.run_tool({
                 "query": "SELECT * FROM t_users WHERE age > ? and age<?",
-                "parameters": ["25", "30"]
+                "parameters": ["25", "27"]
             })
 
             print(result)
@@ -119,7 +124,7 @@ async def main_exe_sql(num: int = 1):
             # 使用实例调用 run_tool 方法
             result = await sql_executor.run_tool({
                 "query": "SELECT * FROM t_users WHERE age > ? and age<?",
-                "parameters": ["25", "26"]
+                "parameters": ["25", "27"]
             })
 
             print(result)
@@ -140,24 +145,24 @@ async def test_main_use_prompt_tools():
     try:
         ret = SmartTool()
 
-        print("=== 测试用例1: 基本SQL执行 ===")
-        result = await ret.run_tool({
-            "user_query": "查询t_users表中年龄25到30岁且姓名以张开头的用户",
-            "sql_executor.query": "SELECT * FROM t_users WHERE age BETWEEN 25 AND 27 AND name LIKE ?",
-            "sql_executor.parameters": ["张%"]
-        })
-        print(result)
-        print("\n")
+        # print("=== 测试用例1: 基本SQL执行 ===")
+        # result = await ret.run_tool({
+        #     "user_query": "查询t_users表中年龄25到30岁且姓名以张开头的用户",
+        #     "sql_executor.query": "SELECT * FROM t_users WHERE age BETWEEN 25 AND 27 AND name LIKE ?",
+        #     "sql_executor.parameters": ["张%"]
+        # })
+        # print(result)
+        # print("\n")
 
-        print("=== 测试用例2: 带表结构查询的SQL执行 ===")
-        result = await ret.run_tool({
-            "user_query": "查询用户表的结构并执行查询",
-            "get_table_desc.table_name": "t_users",
-            "sql_executor.query": "SELECT * FROM t_users WHERE age > 25 AND age < 27 AND name LIKE ?",
-            "sql_executor.parameters": ["张%"]
-        })
-        print(result)
-        print("\n")
+        # print("=== 测试用例2: 带表结构查询的SQL执行 ===")
+        # result = await ret.run_tool({
+        #     "user_query": "查询用户表的结构并执行查询",
+        #     "get_table_desc.table_name": "t_users",
+        #     "sql_executor.query": "SELECT * FROM t_users WHERE age > 25 AND age < 27 AND name LIKE ?",
+        #     "sql_executor.parameters": ["张%"]
+        # })
+        # print(result)
+        # print("\n")
 
         print("=== 测试用例3: 多工具协同工作 ===")
         result = await ret.run_tool({
@@ -168,31 +173,31 @@ async def test_main_use_prompt_tools():
         print(result)
         print("\n")
 
-        print("=== 测试用例4: 复杂参数传递 ===")
-        result = await ret.run_tool({
-            "user_query": "复杂参数传递测试",
-            "get_table_desc.table_name": "t_users",
-            "analyze_query_performance.query": "SELECT * FROM t_users",
-            "collect_table_stats.table_name": "t_users"
-        })
-        print(result)
-        print("\n")
+        # print("=== 测试用例4: 复杂参数传递 ===")
+        # result = await ret.run_tool({
+        #     "user_query": "复杂参数传递测试",
+        #     "get_table_desc.table_name": "t_users",
+        #     "analyze_query_performance.query": "SELECT * FROM t_users",
+        #     "collect_table_stats.table_name": "t_users"
+        # })
+        # print(result)
+        # print("\n")
 
-        print("=== 测试用例5: 带过滤条件的查询 ===")
-        result = await ret.run_tool({
-            "user_query": "查询活跃用户",
-            "sql_executor.query": "SELECT * FROM t_users WHERE is_active = ?",
-            "sql_executor.parameters": [1]
-        })
-        print(result)
-        print("\n")
+        # print("=== 测试用例5: 带过滤条件的查询 ===")
+        # result = await ret.run_tool({
+        #     "user_query": "查询活跃用户",
+        #     "sql_executor.query": "SELECT * FROM t_users WHERE is_active = ?",
+        #     "sql_executor.parameters": [1]
+        # })
+        # print(result)
+        # print("\n")
 
 
     finally:
         await get_current_database_manager().close_pool()
 
 
-if __name__ == "__main__":
+async def main2():
     # 创建会话配置管理器
     session_config_1 = SessionConfigManager({
         "MYSQL_HOST": "localhost",
@@ -213,14 +218,14 @@ if __name__ == "__main__":
     db_manager_1 = DatabaseManager(session_config_1)
 
     # 设置请求上下文
-    with RequestContext(session_config_1, db_manager_1):
-        # asyncio.run(test_main_use_prompt_tools())
-        # asyncio.run(main_exe_sql(1))
-        asyncio.run(main_tools())
-        # asyncio.run(main_tools_err())
-        # asyncio.run(main_switch_db(1))
+    async with RequestContext(session_config_1, db_manager_1):
+        await test_main_use_prompt_tools()
+        # await main_exe_sql(1)
+        # await main_tools()
+        # await main_tools_err()
+        # await main_switch_db(1)
 
-    # 创建会话配置管理器
+    # # 创建会话配置管理器
     # session_config_2 = SessionConfigManager({
     #     "MYSQL_HOST": "localhost",
     #     "MYSQL_PORT": "13308",
@@ -233,8 +238,12 @@ if __name__ == "__main__":
     # db_manager_2 = DatabaseManager(session_config_2)
     #
     # # 设置请求上下文
-    # with RequestContext(session_config_2, db_manager_2):
-    #     # asyncio.run(main_exe_sql(2))
-    #     # asyncio.run(main_tools())
-    #     # asyncio.run(main_switch_db(2))
-    #     asyncio.run(main_tools_err())
+    # async with RequestContext(session_config_2, db_manager_2):
+    #     # await main_exe_sql(2)
+    #     # await main_tools()
+    #     # await main_tools_err()
+    #     await main_switch_db(2)
+
+
+if __name__ == "__main__":
+    asyncio.run(main2())

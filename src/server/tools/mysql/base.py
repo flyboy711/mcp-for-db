@@ -125,14 +125,31 @@ class WorkflowOrchestrator:
 
     @staticmethod
     def generate_workflow(primary_tool: str, tool_params: Dict[str, Dict[str, Any]]) -> List[ToolCall]:
-        """根据主工具和解析的参数生成工具调用链"""
-        # 只创建主工具的调用
-        return [
-            ToolCall(
+        """
+        根据主工具和解析的参数生成工具调用链
+        - 添加所有有参数的工具到工作流
+        - 确保主工具被包含（即使没有参数）
+        - 排除 smart_tool 自身
+        """
+        workflow = []
+
+        # 1. 添加所有有参数的工具
+        for tool_name, params in tool_params.items():
+            if params:  # 只添加有参数的工具
+                workflow.append(ToolCall(
+                    name=tool_name,
+                    arguments=params
+                ))
+
+        # 2. 确保主工具被包含
+        if primary_tool not in tool_params or not tool_params.get(primary_tool):
+            # 如果主工具没有参数，添加一个空调用
+            workflow.append(ToolCall(
                 name=primary_tool,
-                arguments=tool_params.get(primary_tool, {})
-            )
-        ]
+                arguments={}
+            ))
+
+        return workflow
 
 
 ########################################################################################################################
@@ -151,7 +168,7 @@ class ToolSelector:
     TOOL_CATEGORIES = {
         "metadata": ["get_table_name", "get_table_desc", "get_table_index", "get_database_info"],
         "execution": ["sql_executor"],
-        "analysis": ["analyze_query_performance", "collect_table_stats", "get_table_stats"],
+        "analysis": ["sql_executor", "analyze_query_performance", "collect_table_stats", "get_table_stats"],
         "monitoring": ["get_process_list", "get_db_health_running", "get_table_lock"],
         "utility": ["switch_database", "get_chinese_initials", "get_query_logs"]
     }
@@ -159,7 +176,7 @@ class ToolSelector:
     # 参数到工具的映射
     PARAM_TO_TOOL_MAPPING = {
         "query": ["sql_executor", "analyze_query_performance"],
-        "table_name": ["get_table_desc", "get_table_index", "get_table_stats"],
+        "table_name": ["get_table_desc", "get_table_index", "get_table_stats", "get_table_lock"],
         "text": ["get_table_name", "get_chinese_initials"],
         "host": ["switch_database"],
         "database": ["switch_database"],
@@ -169,89 +186,75 @@ class ToolSelector:
 
     @staticmethod
     def recommend_tools(tool_params: Dict[str, Dict[str, Any]]) -> List[str]:
-        """根据解析的参数推荐最合适的工具（排除smart_tool）"""
+        """
+        根据解析的参数推荐最合适的工具（排除smart_tool）
+        - 优先添加有参数的工具
+        - 基于参数类型添加相关工具
+        - 基于工具类别添加相关工具
+        """
         recommended = set()
 
-        # 1. 基于参数类型推荐
+        # 1. 添加所有有参数的工具
         for tool_name, params in tool_params.items():
-            # 跳过smart_tool自身参数
+            if tool_name != "smart_tool" and params:
+                recommended.add(tool_name)
+
+        # 2. 基于参数类型推荐
+        for tool_name, params in tool_params.items():
             if tool_name == "smart_tool":
                 continue
 
             for param_name in params.keys():
                 if param_name in ToolSelector.PARAM_TO_TOOL_MAPPING:
                     for tool in ToolSelector.PARAM_TO_TOOL_MAPPING[param_name]:
-                        # 排除smart_tool
                         if tool != "smart_tool":
                             recommended.add(tool)
 
-        # 2. 基于工具类别推荐
+        # 3. 基于工具类别推荐
         if "query" in tool_params.get("sql_executor", {}):
             # 如果有SQL查询，推荐相关分析工具
             for tool in ToolSelector.TOOL_CATEGORIES["analysis"]:
                 if tool != "smart_tool":
                     recommended.add(tool)
 
-        # 3. 如果没有推荐工具，返回所有可用工具（排除smart_tool）
+        # 4. 如果没有推荐工具，返回所有可用工具（排除smart_tool）
         if not recommended:
             all_tools = list(ToolRegistry.tools().keys())
             if "smart_tool" in all_tools:
                 all_tools.remove("smart_tool")
             return all_tools
 
-        # 按优先级排序
-        return ToolSelector._sort_by_priority(list(recommended))
+        return list(recommended)
 
     @staticmethod
     def select_primary_tool(tool_params: Dict[str, Dict[str, Any]], recommended_tools: List[str]) -> str:
-        """从推荐工具中选择主工具（排除smart_tool）"""
-        # 1. 优先选择执行类工具
-        for tool in ToolSelector.TOOL_PRIORITY["high"]:
-            if tool in recommended_tools and tool != "smart_tool":
-                return tool
-
-        # 2. 其次选择元数据类工具
-        for tool in ToolSelector.TOOL_PRIORITY["medium"]:
-            if tool in recommended_tools and tool != "smart_tool":
-                return tool
-
-        # 3. 最后选择分析类工具
-        for tool in ToolSelector.TOOL_PRIORITY["low"]:
-            if tool in recommended_tools and tool != "smart_tool":
-                return tool
-
-        # 4. 如果都没有，返回第一个推荐工具（排除smart_tool）
+        """
+        从推荐工具中选择主工具（排除smart_tool）
+        - 优先选择有参数的工具作为主工具
+        - 其次按优先级选择工具
+        - 确保选择有意义的工具
+        """
+        # 1. 优先选择有参数的工具
         for tool in recommended_tools:
-            if tool != "smart_tool":
+            if tool in tool_params and tool_params[tool]:
                 return tool
 
-        return "sql_executor"  # 默认回退
-
-    @staticmethod
-    def _sort_by_priority(tools: List[str]) -> List[str]:
-        """按优先级排序工具列表（排除smart_tool）"""
-        priority_order = []
-
-        # 添加高优先级工具
+        # 2. 其次选择高优先级工具
         for tool in ToolSelector.TOOL_PRIORITY["high"]:
-            if tool in tools and tool != "smart_tool":
-                priority_order.append(tool)
+            if tool in recommended_tools:
+                return tool
 
-        # 添加中优先级工具
+        # 3. 再次选择中优先级工具
         for tool in ToolSelector.TOOL_PRIORITY["medium"]:
-            if tool in tools and tool != "smart_tool":
-                priority_order.append(tool)
+            if tool in recommended_tools:
+                return tool
 
-        # 添加低优先级工具
+        # 4. 最后选择低优先级工具
         for tool in ToolSelector.TOOL_PRIORITY["low"]:
-            if tool in tools and tool != "smart_tool":
-                priority_order.append(tool)
+            if tool in recommended_tools:
+                return tool
 
-        # 添加其他未分类工具（排除smart_tool）
-        for tool in tools:
-            if tool not in priority_order and tool != "smart_tool":
-                priority_order.append(tool)
-
-        return priority_order
+        # 5. 如果都没有，返回第一个推荐工具
+        return recommended_tools[0] if recommended_tools else "sql_executor"
 ########################################################################################################################
 ########################################################################################################################

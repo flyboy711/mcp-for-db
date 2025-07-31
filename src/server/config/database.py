@@ -360,8 +360,7 @@ class DatabaseManager:
     ###################################################################################################################
     ###################################################################################################################
     async def execute_query(self, sql_query: str, params: Optional[Dict[str, Any]] = None,
-                            require_database: bool = True, stream_results: bool = False,
-                            batch_size: int = 1000) -> Union[
+                            require_database: bool = True) -> Union[
         List[Dict[str, Any]], AsyncGenerator[List[Dict[str, Any]], None]]:
         """
         执行SQL查询，包含全面的安全检查和范围控制
@@ -370,8 +369,6 @@ class DatabaseManager:
             sql_query: SQL查询语句
             params: 查询参数 (可选)
             require_database: 是否要求指定数据库
-            stream_results: 是否使用流式处理获取大型结果集
-            batch_size: 流式处理的批次大小
 
         Returns:
             查询结果列表或结果生成器
@@ -403,7 +400,6 @@ class DatabaseManager:
 
             # 解析SQL以获取操作类型和表名
             category = parsed_sql['category']
-            tables = parsed_sql['tables']
 
             async with self.get_connection() as conn:
                 # 创建游标
@@ -417,17 +413,12 @@ class DatabaseManager:
                     # 处理结果
                     if cursor.description:
                         # SELECT查询，获取结果
-                        if stream_results:
-                            # 流式处理大型结果集
-                            return self._stream_results(cursor, batch_size, sql_query, operation)
-                        else:
-                            # 一次性获取所有结果
-                            results = await cursor.fetchall()
-                            return self._process_results(results, sql_query, operation, category)
+                        # 一次性获取所有结果
+                        results = await cursor.fetchall()
+                        return self._process_results(results, sql_query, operation, category)
                     else:
                         # DML/DDL操作，返回影响行数
                         affected_rows = cursor.rowcount
-
                         # 对于修改操作，提交事务
                         if category == 'DML' and operation in {'UPDATE', 'DELETE', 'INSERT'}:
                             await conn.commit()
@@ -465,57 +456,6 @@ class DatabaseManager:
     ###################################################################################################################
     ###################################################################################################################
     ###################################################################################################################
-    async def _stream_results(self, cursor: aiomysql.Cursor, batch_size: int,
-                              sql_query: str, operation: str) -> AsyncGenerator[List[Dict[str, Any]], None]:
-        """
-        流式处理查询结果
-
-        Args:
-            cursor: 数据库游标
-            batch_size: 批次大小
-            sql_query: SQL查询语句
-            operation: 操作类型
-
-        Yields:
-            结果批次列表
-        """
-        total_fetched = 0
-        logger.debug(f"开始流式处理查询: {sql_query[:100]}...")
-
-        while True:
-            batch = await cursor.fetchmany(batch_size)
-            if not batch:
-                break
-
-            # 处理结果
-            processed_batch = self._process_batch(batch, operation)
-            total_fetched += len(processed_batch)
-            logger.debug(f"已获取 {total_fetched} 条记录")
-
-            yield processed_batch
-
-            # 检查是否还有剩余结果
-            if len(batch) < batch_size:
-                break
-
-        logger.debug(f"流式查询总共返回 {total_fetched} 条结果")
-
-    def _process_batch(self, batch: List[Dict[str, Any]], operation: str) -> List[Dict[str, Any]]:
-        """
-        处理结果批次
-
-        Args:
-            batch: 结果批次
-            operation: 操作类型
-
-        Returns:
-            处理后的结果列表
-        """
-        # 对于元数据查询，增强结果
-        if operation in {'SHOW', 'DESCRIBE', 'EXPLAIN'}:
-            return self._enhance_metadata_results(batch, operation)
-        return [dict(row) for row in batch]
-
     def _enhance_metadata_results(self, results: List[Dict[str, Any]], operation: str) -> List[Dict[str, Any]]:
         """
         增强元数据查询结果
@@ -630,7 +570,7 @@ class DatabaseManager:
         try:
             parsed = self.sql_parser.parse_query(query)
             operation = parsed.get('operation_type', 'UNKNOWN')
-        except Exception:
+        except RuntimeError:
             operation = 'UNKNOWN'
 
         # 根据执行时间确定日志级别
@@ -736,28 +676,6 @@ async def test_database_operations():
         for row in result:
             logger.info(f"表名: {row.get('table_name', row.get('Tables_in_test', '未知'))}")
 
-        # 场景5: 测试流式查询
-        logger.info("\n测试场景5: 测试流式查询")
-        # 首先获取当前数据库中的所有表
-        tables = await database_manager.execute_query("SHOW TABLES")
-        if tables:
-            # 使用找到的第一个表进行测试
-            table_name = list(tables[0].values())[0]
-            logger.info(f"使用表: {table_name} 进行流式查询测试")
-
-            # 获取异步生成器
-            result_generator = await database_manager.execute_query(
-                f"SELECT * FROM {table_name}",
-                stream_results=True,
-                batch_size=100
-            )
-
-            # 使用 async for 迭代结果
-            async for batch in result_generator:
-                logger.info(f"获取到 {len(batch)} 条记录")
-        else:
-            logger.warning("没有找到任何表进行测试")
-
         # # 场景6: 测试DML操作
         # logger.info("\n测试场景6: 测试DML操作")
         # try:
@@ -826,5 +744,5 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(test_database_operations())
-    # asyncio.run(main())
+    # asyncio.run(test_database_operations())
+    asyncio.run(main())
