@@ -59,7 +59,7 @@ python -m build
 # 本地安装
 pip install .
 # 本地启动
-mcp_for_db
+src
 
 # 上传到仓库
 twine upload -r dewuPython dist/*

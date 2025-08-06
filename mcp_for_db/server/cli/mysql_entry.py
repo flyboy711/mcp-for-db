@@ -1,0 +1,40 @@
+import asyncio
+import click
+from mcp_for_db.server.core import ServiceManager
+
+
+@click.command()
+@click.option("--mode", default="stdio", type=click.Choice(["stdio", "sse", "streamable_http"]), help="运行模式")
+@click.option("--host", default="0.0.0.0", help="主机地址")
+@click.option("--port", type=int, help="端口号（SSE默认9000，HTTP默认3000）")
+@click.option("--oauth", is_flag=True, help="启用OAuth认证")
+@click.option("--envfile", help="自定义环境配置文件")
+def main(mode, host, port, oauth, envfile):
+    """MySQL MCP服务启动器"""
+
+    # 如果指定了环境文件，先加载它
+    if envfile:
+        from dotenv import load_dotenv
+        load_dotenv(envfile)
+
+    service_manager = ServiceManager()
+
+    try:
+        service = service_manager.create_service("mysql")
+
+        if mode == "stdio":
+            asyncio.run(service.run_stdio())
+        elif mode == "sse":
+            default_port = port or 9000
+            service.run_sse(host, default_port)
+        elif mode == "streamable_http":
+            default_port = port or 3000
+            service.run_streamable_http(host, default_port, oauth=oauth)
+
+    except Exception as e:
+        print(f"MySQL服务启动失败: {e}")
+        raise
+
+
+if __name__ == "__main__":
+    main()
