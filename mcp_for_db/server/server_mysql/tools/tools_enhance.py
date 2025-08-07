@@ -1,15 +1,15 @@
-import logging
 from typing import Dict, Any, Sequence
 from mcp import Tool
 from mcp.types import TextContent
 
+from mcp_for_db import LOG_LEVEL
 from mcp_for_db.server.common import ENHANCED_DESCRIPTIONS
 from mcp_for_db.server.common.base import ToolSelector, BaseHandler, ToolRegistry, WorkflowOrchestrator
 from mcp_for_db.server.shared.utils import get_logger, configure_logger
 
 logger = get_logger(__name__)
 configure_logger(log_filename="sql_tools.log")
-logger.setLevel(logging.WARNING)
+logger.setLevel(LOG_LEVEL)
 
 
 class SmartTool(BaseHandler):

@@ -145,7 +145,7 @@
             background: white;
             padding: 1.25rem;
             border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
             margin-bottom: 0.75rem;
         }
 
@@ -236,50 +236,50 @@
     </style>
 </head>
 <body>
-    <!-- 登录表单 -->
-    <div class="login-container">
-        <div class="header">
-            <h1 class="title">MySQL MCP Server Pro</h1>
-            <div class="author">by wenb1n</div>
-        </div>
-        <form id="loginForm">
-            <div class="form-group">
-                <label for="username">用户名</label>
-                <input type="text" id="username" name="username" required>
-            </div>
-            <div class="form-group">
-                <label for="password">密码</label>
-                <input type="password" id="password" name="password" required>
-            </div>
-            <button type="submit" class="submit-button">登录</button>
-        </form>
-        <div id="errorMessage" class="error-message"></div>
+<!-- 登录表单 -->
+<div class="login-container">
+    <div class="header">
+        <h1 class="title">MySQL MCP Server Pro</h1>
+        <div class="author">by wenb1n</div>
     </div>
+    <form id="loginForm">
+        <div class="form-group">
+            <label for="username">用户名</label>
+            <input type="text" id="username" name="username" required>
+        </div>
+        <div class="form-group">
+            <label for="password">密码</label>
+            <input type="password" id="password" name="password" required>
+        </div>
+        <button type="submit" class="submit-button">登录</button>
+    </form>
+    <div id="errorMessage" class="error-message"></div>
+</div>
 
-    <!-- Token展示界面 -->
-    <div id="tokenContainer" class="token-container">
-        <div class="token-content">
-            <div class="token-header">
-                <h1>MySQL MCP Server Pro</h1>
-                <div class="subtitle">by wenb1n</div>
+<!-- Token展示界面 -->
+<div id="tokenContainer" class="token-container">
+    <div class="token-content">
+        <div class="token-header">
+            <h1>MySQL MCP Server Pro</h1>
+            <div class="subtitle">by wenb1n</div>
+        </div>
+
+        <div class="token-section">
+            <h2>🔑 访问令牌 (Access Token)</h2>
+            <div id="tokenValue" class="token-value"></div>
+            <div class="token-info">
+                <p>⏰ 过期时间：<span id="expireTime"></span></p>
             </div>
+            <button id="copyButton" class="copy-button">📋 复制Token</button>
+        </div>
 
-            <div class="token-section">
-                <h2>🔑 访问令牌 (Access Token)</h2>
-                <div id="tokenValue" class="token-value"></div>
-                <div class="token-info">
-                    <p>⏰ 过期时间：<span id="expireTime"></span></p>
-                </div>
-                <button id="copyButton" class="copy-button">📋 复制Token</button>
+        <div class="token-section">
+            <h2>🔄 刷新令牌 (Refresh Token)</h2>
+            <div id="refreshTokenValue" class="token-value"></div>
+            <div class="token-info">
+                <p>使用刷新令牌获取新的访问令牌:</p>
             </div>
-
-            <div class="token-section">
-                <h2>🔄 刷新令牌 (Refresh Token)</h2>
-                <div id="refreshTokenValue" class="token-value"></div>
-                <div class="token-info">
-                    <p>使用刷新令牌获取新的访问令牌:</p>
-                </div>
-                <div class="code-block">
+            <div class="code-block">
                     <pre id="refreshTokenExample">curl -X POST http://localhost:3000/mcp/auth/login \
   -H "Content-Type: application/json" \
   -d '{
@@ -288,114 +288,114 @@
     "client_id": "mysql-mcp-client",
     "client_secret": "mysql-mcp-secret"
   }'</pre>
-                </div>
-            </div>
-
-            <div class="github-card">
-                <a href="https://github.com/wenb1n-dev/mysql_mcp_server_pro" target="_blank">
-                    ⭐️ 如果觉得好用，请帮忙点个 Star 支持一下！
-                </a>
             </div>
         </div>
+
+        <div class="github-card">
+            <a href="https://github.com/wenb1n-dev/mysql_mcp_server_pro" target="_blank">
+                ⭐️ 如果觉得好用，请帮忙点个 Star 支持一下！
+            </a>
+        </div>
     </div>
+</div>
 
-    <script>
-        // 生成随机盐值
-        function generateSalt(length = 16) {
-            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-            let salt = '';
-            for (let i = 0; i < length; i++) {
-                salt += chars.charAt(Math.floor(Math.random() * chars.length));
-            }
-            return salt;
+<script>
+    // 生成随机盐值
+    function generateSalt(length = 16) {
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+        let salt = '';
+        for (let i = 0; i < length; i++) {
+            salt += chars.charAt(Math.floor(Math.random() * chars.length));
         }
+        return salt;
+    }
 
-        // 加密密码
-        function encryptPassword(password, salt, timestamp) {
-            // 第一次哈希：密码 + 盐
-            const firstHash = CryptoJS.SHA256(password + salt).toString();
-            // 第二次哈希：第一次哈希结果 + 时间戳
-            const finalHash = CryptoJS.SHA256(firstHash + timestamp).toString();
-            return finalHash;
-        }
+    // 加密密码
+    function encryptPassword(password, salt, timestamp) {
+        // 第一次哈希：密码 + 盐
+        const firstHash = CryptoJS.SHA256(password + salt).toString();
+        // 第二次哈希：第一次哈希结果 + 时间戳
+        const finalHash = CryptoJS.SHA256(firstHash + timestamp).toString();
+        return finalHash;
+    }
 
-        document.getElementById('loginForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const username = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
-            
-            try {
-                // 生成安全参数
-                const salt = generateSalt();
-                const timestamp = Date.now().toString();
-                const encryptedPassword = encryptPassword(password, salt, timestamp);
-                
-                const response = await fetch('/mcp/auth/login', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json',
-                        'X-Timestamp': timestamp,  // 添加时间戳头
-                        'X-Salt': salt,           // 添加盐值头
-                    },
-                    body: JSON.stringify({
-                        grant_type: 'password',
-                        username: username,
-                        password: encryptedPassword,  // 发送加密后的密码
-                        client_id: 'server_mysql-mcp-client',
-                        client_secret: 'server_mysql-mcp-secret'
-                    })
-                });
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const username = document.getElementById('username').value;
+        const password = document.getElementById('password').value;
 
-                const data = await response.json();
-                
-                if (response.ok) {
-                    // 显示token信息
-                    const tokenContainer = document.getElementById('tokenContainer');
-                    const tokenValue = document.getElementById('tokenValue');
-                    const expireTime = document.getElementById('expireTime');
-                    const refreshTokenValue = document.getElementById('refreshTokenValue');
-                    
-                    tokenValue.textContent = data.access_token;
-                    expireTime.innerHTML = `
+        try {
+            // 生成安全参数
+            const salt = generateSalt();
+            const timestamp = Date.now().toString();
+            const encryptedPassword = encryptPassword(password, salt, timestamp);
+
+            const response = await fetch('/mcp/auth/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-Timestamp': timestamp,  // 添加时间戳头
+                    'X-Salt': salt,           // 添加盐值头
+                },
+                body: JSON.stringify({
+                    grant_type: 'password',
+                    username: username,
+                    password: encryptedPassword,  // 发送加密后的密码
+                    client_id: 'server_mysql-mcp-client',
+                    client_secret: 'server_mysql-mcp-secret'
+                })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                // 显示token信息
+                const tokenContainer = document.getElementById('tokenContainer');
+                const tokenValue = document.getElementById('tokenValue');
+                const expireTime = document.getElementById('expireTime');
+                const refreshTokenValue = document.getElementById('refreshTokenValue');
+
+                tokenValue.textContent = data.access_token;
+                expireTime.innerHTML = `
                         <div style="display: flex; flex-direction: column; gap: 0.25rem;">
                             <div>🔑 访问令牌过期时间: ${data.expire_time}</div>
                             <div>🔄 刷新令牌过期时间: ${data.refresh_token_expire_time}</div>
                         </div>
                     `;
-                    refreshTokenValue.textContent = data.refresh_token;
-                    
-                    // 更新示例代码中的刷新令牌
-                    const example = document.getElementById('refreshTokenExample');
-                    example.textContent = example.textContent.replace('your-refresh-token', data.refresh_token);
-                    
-                    tokenContainer.style.display = 'block';
-                    document.querySelector('.login-container').style.display = 'none';
-                } else {
-                    const errorMessage = document.getElementById('errorMessage');
-                    errorMessage.textContent = data.error_description || data.error || '登录失败';
-                    errorMessage.style.display = 'block';
-                }
-            } catch (error) {
+                refreshTokenValue.textContent = data.refresh_token;
+
+                // 更新示例代码中的刷新令牌
+                const example = document.getElementById('refreshTokenExample');
+                example.textContent = example.textContent.replace('your-refresh-token', data.refresh_token);
+
+                tokenContainer.style.display = 'block';
+                document.querySelector('.login-container').style.display = 'none';
+            } else {
                 const errorMessage = document.getElementById('errorMessage');
-                errorMessage.textContent = '网络错误，请稍后重试';
+                errorMessage.textContent = data.error_description || data.error || '登录失败';
                 errorMessage.style.display = 'block';
             }
-        });
+        } catch (error) {
+            const errorMessage = document.getElementById('errorMessage');
+            errorMessage.textContent = '网络错误，请稍后重试';
+            errorMessage.style.display = 'block';
+        }
+    });
 
-        document.getElementById('copyButton').addEventListener('click', function() {
-            const token = document.getElementById('tokenValue').textContent;
-            if (token) {
-                navigator.clipboard.writeText(token).then(() => {
-                    this.textContent = '✓ 已复制';
-                    setTimeout(() => {
-                        this.innerHTML = '📋 复制Token';
-                    }, 2000);
-                }).catch(() => {
-                    alert('复制失败，请手动复制');
-                });
-            }
-        });
-    </script>
+    document.getElementById('copyButton').addEventListener('click', function () {
+        const token = document.getElementById('tokenValue').textContent;
+        if (token) {
+            navigator.clipboard.writeText(token).then(() => {
+                this.textContent = '✓ 已复制';
+                setTimeout(() => {
+                    this.innerHTML = '📋 复制Token';
+                }, 2000);
+            }).catch(() => {
+                alert('复制失败，请手动复制');
+            });
+        }
+    });
+</script>
 </body>
 </html> 

@@ -1,13 +1,14 @@
-import logging
 from typing import List, Type, ClassVar, Dict
 from urllib.parse import urlparse
 from pydantic.networks import AnyUrl
 from mcp.types import Resource
+
+from mcp_for_db import LOG_LEVEL
 from mcp_for_db.server.shared.utils import configure_logger, get_logger
 
 logger = get_logger(__name__)
 configure_logger(log_filename="resources.log")
-logger.setLevel(logging.WARNING)
+logger.setLevel(LOG_LEVEL)
 
 
 class ResourceRegistry:

@@ -8,8 +8,8 @@ from mcp_for_db.server.core import ServiceManager
 @click.option("--host", default="0.0.0.0", help="主机地址")
 @click.option("--port", type=int, help="端口号（SSE默认9000，HTTP默认3000）")
 @click.option("--oauth", is_flag=True, help="启用OAuth认证")
-def main(mode, host, port, oauth):
-    """MySQL MCP服务启动器"""
+def mysql_main(mode, host, port, oauth):
+    """MySQL MCP 服务启动器"""
 
     service_manager = ServiceManager()
 
@@ -31,4 +31,4 @@ def main(mode, host, port, oauth):
 
 
 if __name__ == "__main__":
-    main()
+    mysql_main()

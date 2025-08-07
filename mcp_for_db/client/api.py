@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
-import logging
+from mcp_for_db import LOG_LEVEL
 import json
 import asyncio
 import uuid
@@ -19,7 +19,7 @@ from mcp_for_db.server.shared.utils import get_logger, configure_logger
 # 配置日志
 logger = get_logger(__name__)
 configure_logger("FastAPI.log")
-logger.setLevel(logging.INFO)
+logger.setLevel(LOG_LEVEL)
 
 # 全局变量
 mcp_service = None
@@ -32,25 +32,25 @@ async def lifespan(app: FastAPI):
     global mcp_service
 
     # 启动时就初始化 MCP 服务
-    logger.info("🚀 正在初始化 MCP 服务...")
+    logger.info("正在初始化 MCP 服务...")
     try:
         mcp_service = MCPClient()
         await mcp_service.initialize()
-        logger.info("✅ MCP服务初始化完成")
+        logger.info("MCP服务初始化完成")
     except Exception as e:
-        logger.error(f"❌ MCP服务初始化失败: {e}")
+        logger.error(f"MCP服务初始化失败: {e}")
         raise
 
     yield
 
     # 关闭时清理资源
-    logger.info("🧹 正在清理 MCP 服务...")
+    logger.info("正在清理 MCP 服务...")
     if mcp_service:
         try:
             await mcp_service.cleanup()
-            logger.info("✅ MCP 服务清理完成")
+            logger.info("MCP 服务清理完成")
         except Exception as e:
-            logger.error(f"❌ 清理 MCP 服务时出错: {e}")
+            logger.error(f"清理 MCP 服务时出错: {e}")
 
 
 # 创建 FastAPI 应用
@@ -225,7 +225,7 @@ async def process_query(
     conversation_id = request.conversation_id or generate_conversation_id()
 
     try:
-        logger.info(f"📝 收到查询 [会话:{conversation_id[:12]}...]: {request.question[:100]}...")
+        logger.info(f"收到查询 [会话:{conversation_id[:12]}...]: {request.question[:100]}...")
 
         # 获取会话历史
         conversation_history = request.conversation_history or []
@@ -234,7 +234,7 @@ async def process_query(
             conversation_history = conversation_cache[conversation_id]["messages"]
 
         # 调用 MCP 客户端处理查询（这里会自动调用大模型和工具）
-        logger.info(f"🤖 开始调用 MCP 客户端处理查询...")
+        logger.info(f"开始调用 MCP 客户端处理查询...")
         result = await service.process_query(
             user_query=request.question,
             conversation_history=conversation_history
@@ -282,12 +282,12 @@ async def process_query(
             len(result.get("tool_calls", []))
         )
 
-        logger.info(f"✅ 查询处理完成 [会话:{conversation_id[:12]}...] 用时:{processing_time:.3f}s")
+        logger.info(f"查询处理完成 [会话:{conversation_id[:12]}...] 用时:{processing_time:.3f}s")
         return response
 
     except Exception as e:
         processing_time = time.time() - start_time
-        logger.error(f"❌ 处理查询时出错 [会话:{conversation_id[:12]}...]: {e}")
+        logger.error(f"处理查询时出错 [会话:{conversation_id[:12]}...]: {e}")
         import traceback
         logger.error(f"详细错误信息: {traceback.format_exc()}")
 
@@ -314,9 +314,9 @@ async def chat_stream(
 
     async def generate_stream():
         try:
-            logger.info(f"🌊 开始流式处理 [会话:{conversation_id[:12]}...]")
+            logger.info(f"开始流式处理 [会话:{conversation_id[:12]}...]")
 
-            yield f"data: {json.dumps({'type': 'start', 'conversation_id': conversation_id}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'type': 'start', 'conversation_id': conversation_id}, ensure_ascii=False)}\n"
 
             # 获取会话历史
             conversation_history = request.conversation_history or []
@@ -376,13 +376,13 @@ async def chat_stream(
             manage_conversation_cache(conversation_id, new_messages)
 
         except Exception as e:
-            logger.error(f"❌ 流式处理出错: {e}")
+            logger.error(f"流式处理出错: {e}")
             error_data = {
                 "type": "error",
                 "error": str(e),
                 "conversation_id": conversation_id
             }
-            yield f"data: {json.dumps(error_data, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps(error_data, ensure_ascii=False)}\n"
 
     return StreamingResponse(
         generate_stream(),
@@ -417,11 +417,11 @@ async def get_available_tools(service: MCPClient = Depends(get_mcp_service)):
                 )
                 tool_list.append(tool_info)
 
-        logger.info(f"📋 返回 {len(tool_list)} 个可用工具")
+        logger.info(f"返回 {len(tool_list)} 个可用工具")
         return tool_list
 
     except Exception as e:
-        logger.error(f"❌ 获取工具列表时出错: {e}")
+        logger.error(f"获取工具列表时出错: {e}")
         raise HTTPException(status_code=500, detail=f"获取工具列表失败: {str(e)}")
 
 
@@ -452,7 +452,7 @@ async def health_check(service: MCPClient = Depends(get_mcp_service)):
         )
 
     except Exception as e:
-        logger.error(f"❌ 健康检查时出错: {e}")
+        logger.error(f"健康检查时出错: {e}")
         return HealthResponse(
             status="error",
             details={"error": str(e)},
@@ -514,7 +514,7 @@ async def delete_conversation(conversation_id: str):
         raise HTTPException(status_code=404, detail="会话不存在")
 
     del conversation_cache[conversation_id]
-    logger.info(f"🗑️ 删除会话: {conversation_id}")
+    logger.info(f"删除会话: {conversation_id}")
     return {"message": f"会话 {conversation_id} 已删除", "timestamp": get_current_timestamp()}
 
 
@@ -525,7 +525,7 @@ async def execute_tool_directly(
 ):
     """直接执行指定工具"""
     try:
-        logger.info(f"🔧 直接执行工具: {request.tool_name}")
+        logger.info(f"直接执行工具: {request.tool_name}")
 
         start_time = time.time()
         result = await service.call_mcp_tool(request.tool_name, request.tool_args)
@@ -541,7 +541,7 @@ async def execute_tool_directly(
         }
 
     except Exception as e:
-        logger.error(f"❌ 执行工具失败: {e}")
+        logger.error(f"执行工具失败: {e}")
         return {
             "success": False,
             "tool_name": request.tool_name,
@@ -561,7 +561,7 @@ async def log_query_stats(
 ):
     """记录查询统计信息"""
     logger.info(
-        f"📊 查询统计 - 会话:{conversation_id[:12]}... | "
+        f"查询统计 - 会话:{conversation_id[:12]}... | "
         f"成功:{success} | 用时:{processing_time:.3f}s | "
         f"问题长度:{len(question)} | 工具调用:{tool_calls_count}"
     )
@@ -580,7 +580,7 @@ async def http_exception_handler(request, exc):
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request, exc):
-    logger.error(f"❌ 未处理的异常: {exc}")
+    logger.error(f"未处理的异常: {exc}")
     import traceback
     logger.error(f"详细错误信息: {traceback.format_exc()}")
     return {
@@ -600,9 +600,9 @@ def main():
 
     args = parser.parse_args()
 
-    logger.info(f"🚀 启动 MCP 智能问答 API 服务...")
-    logger.info(f"📍 服务地址: http://{args.host}:{args.port}")
-    logger.info(f"📖 API文档: http://{args.host}:{args.port}/docs")
+    logger.info(f"启动 MCP 智能问答 API 服务...")
+    logger.info(f"服务地址: http://{args.host}:{args.port}")
+    logger.info(f"API文档: http://{args.host}:{args.port}/docs")
 
     uvicorn.run(
         "mcp_for_db.client.api:app",

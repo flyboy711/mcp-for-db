@@ -1,6 +1,5 @@
 import asyncio
 import contextlib
-import logging
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from typing import Dict, Any, List, Sequence
@@ -17,6 +16,7 @@ from starlette.responses import Response
 from starlette.routing import Route, Mount
 from starlette.types import Scope, Receive, Send
 
+from mcp_for_db import LOG_LEVEL
 from mcp_for_db.server.shared.utils import get_logger, configure_logger
 from mcp_for_db.server.core import ConfigManager
 
@@ -33,7 +33,7 @@ class BaseMCPServer(ABC):
         self.resources_initialized = False
         self.server_setup_completed = False
         # 设置日志级别
-        self.logger.setLevel(logging.INFO)
+        self.logger.setLevel(LOG_LEVEL)
         configure_logger(log_filename=f"{service_name}_server.log")
 
     @abstractmethod

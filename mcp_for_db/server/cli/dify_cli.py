@@ -7,8 +7,9 @@ from mcp_for_db.server.core import ServiceManager
 @click.option("--mode", default="stdio", type=click.Choice(["stdio", "sse", "streamable_http"]), help="运行模式")
 @click.option("--host", default="0.0.0.0", help="主机地址")
 @click.option("--port", type=int, help="端口号")
-def main(mode, host, port):
-    """DiFy MCP服务启动器"""
+@click.option("--oauth", is_flag=True, help="启用OAuth认证")
+def dify_main(mode, host, port, oauth):
+    """DiFy MCP 服务启动器"""
 
     service_manager = ServiceManager()
 
@@ -22,7 +23,7 @@ def main(mode, host, port):
             service.run_sse(host, default_port)
         elif mode == "streamable_http":
             default_port = port or 3001
-            service.run_streamable_http(host, default_port)
+            service.run_streamable_http(host, default_port, oauth=oauth)
 
     except Exception as e:
         print(f"DiFy服务启动失败: {e}")
@@ -30,4 +31,4 @@ def main(mode, host, port):
 
 
 if __name__ == "__main__":
-    main()
+    dify_main()

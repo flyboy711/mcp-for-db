@@ -1,5 +1,6 @@
-import logging
 from typing import Dict, Sequence, Any
+
+from mcp_for_db import LOG_LEVEL
 from mcp_for_db.server.common import ENHANCED_DESCRIPTIONS
 from mcp_for_db.server.server_mysql.config import get_current_database_manager
 from mcp_for_db.server.shared.utils import configure_logger, get_logger
@@ -10,7 +11,7 @@ from mcp_for_db.server.server_mysql.tools import ExecuteSQL
 
 logger = get_logger(__name__)
 configure_logger(log_filename="sql_tools.log")
-logger.setLevel(logging.WARNING)
+logger.setLevel(LOG_LEVEL)
 
 
 class GetTableName(BaseHandler):

@@ -1,11 +1,12 @@
 import os
 import json
-import logging
 import asyncio
 from pathlib import Path
 from typing import Dict, List, Any
 from contextlib import AsyncExitStack
 from enum import Enum
+
+from mcp_for_db import LOG_LEVEL
 
 # 根据模型类型选择不同的客户端
 try:
@@ -44,7 +45,7 @@ class MCPClient:
         """
         # 首先初始化日志器
         self.logger = get_logger(__name__)
-        self.logger.setLevel(logging.INFO)
+        self.logger.setLevel(LOG_LEVEL)
         configure_logger("Client.log")
 
         self.logger.info("开始初始化 MCP 客户端...")
@@ -85,15 +86,15 @@ class MCPClient:
         """自动检测模型提供商"""
         model_lower = self.model.lower()
 
-        # 检测qwen模型，统一使用OpenAI兼容接口
+        # 检测 qwen 模型，统一使用 OpenAI 兼容接口
         if "qwen" in model_lower:
             return ModelProvider.QWEN_COMPATIBLE
 
-        # 检测自定义base_url (OpenAI兼容接口)
+        # 检测自定义 base_url (OpenAI 兼容接口)
         if self.base_url and "openai" not in self.base_url.lower():
             return ModelProvider.CUSTOM_OPENAI_COMPATIBLE
 
-        # 默认使用OpenAI
+        # 默认使用 OpenAI
         return ModelProvider.OPENAI
 
     def _initialize_client(self):
@@ -117,22 +118,22 @@ class MCPClient:
             self.logger.info(f"使用自定义OpenAI兼容接口: {self.base_url}")
 
         else:
-            # 标准 OpenAI
+            # 标准 OpenAI: 暂时还是阿里的
             if self.base_url and self.base_url != "https://dashscope.aliyuncs.com/compatible-mode/v1":
                 client_kwargs["base_url"] = self.base_url
-            self.logger.info(f"使用标准OpenAI接口: {self.model}")
+            self.logger.info(f"使用标准 OpenAI 接口: {self.model}")
 
         return OpenAI(**client_kwargs)
 
     @staticmethod
     def get_mysql_server_path() -> str:
         """获取 MySQL 服务器脚本路径"""
-        return "mcp_for_db.server.cli.mysql_entry"
+        return "mcp_for_db.server.cli.mysql_cli"
 
     @staticmethod
     def get_dify_server_path() -> str:
         """获取 DiFy 服务器脚本路径"""
-        return "mcp_for_db.server.cli.dify_entry"
+        return "mcp_for_db.server.cli.dify_cli"
 
     async def initialize(self):
         """初始化所有 MCP 服务器连接"""
@@ -453,7 +454,7 @@ class MCPClient:
             self.sessions.clear()
             self.tools_by_session.clear()
             self.all_tools.clear()
-            self.logger.info("✅ MCP客户端资源清理完成")
+            self.logger.info("MCP客户端资源清理完成")
         except Exception as e:
             self.logger.error(f"清理资源时出错: {e}")
 
@@ -515,62 +516,62 @@ class MCPClient:
 # 使用示例
 async def main_test():
     """测试函数"""
-    print("🚀 启动MCP客户端测试...")
+    print("启动 MCP 客户端测试...")
 
     client = MCPClient()
 
     try:
-        print("📡 初始化连接...")
+        print("初始化连接...")
         await client.initialize()
 
-        print("🏥 执行健康检查...")
+        print("执行健康检查...")
         health = await client.health_check()
         print("健康检查结果:", json.dumps(health, indent=2, ensure_ascii=False))
 
-        print("📊 显示可用工具...")
+        print("显示可用工具...")
         tools = client.get_available_tools()
         print(f"可用工具数量: {len(tools)}")
-        for tool in tools[:5]:  # 只显示前5个工具
+        for tool in tools[:5]:  # 只显示前 5 个工具
             desc = tool['function']['description']
             if len(desc) > 100:
                 desc = desc[:100] + "..."
-            print(f"  - {tool['function']['name']}: {desc}")
+            print(f" - {tool['function']['name']}: {desc}")
         if len(tools) > 5:
-            print(f"  ... 还有 {len(tools) - 5} 个工具")
+            print(f" ... 还有 {len(tools) - 5} 个工具")
 
-        print("\n💬 测试查询...")
+        print("\n测试查询...")
         test_queries = [
             "显示所有数据库表",
             "显示当前数据库信息"
         ]
 
         for query in test_queries:
-            print(f"\n🔍 查询: {query}")
+            print(f"\n查询: {query}")
             try:
                 result = await client.process_query(query)
 
                 if result["success"]:
-                    print(f"✅ 回答: {result['answer']}")
+                    print(f"回答: {result['answer']}")
                     if result.get("tool_calls"):
-                        print(f"🔧 使用了 {len(result['tool_calls'])} 个工具")
+                        print(f"使用了 {len(result['tool_calls'])} 个工具")
                         for tool_call in result["tool_calls"]:
                             status = "成功" if tool_call.get('success') else "失败"
-                            print(f"   - {tool_call['tool_name']}: {status}")
+                            print(f"  - {tool_call['tool_name']}: {status}")
                 else:
-                    print(f"❌ 错误: {result.get('error', '未知错误')}")
+                    print(f"错误: {result.get('error', '未知错误')}")
 
             except Exception as e:
-                print(f"❌ 处理查询时发生异常: {e}")
+                print(f"处理查询时发生异常: {e}")
 
     except Exception as e:
-        print(f"❌ 测试失败: {e}")
+        print(f"测试失败: {e}")
         import traceback
         traceback.print_exc()
 
     finally:
-        print("🧹 清理资源...")
+        print("清理资源...")
         await client.cleanup()
-        print("✅ 测试完成")
+        print("测试完成")
 
 
 # 交互式命令行模式
@@ -594,20 +595,20 @@ async def main():
     client = MCPClient()
 
     try:
-        print("🔌 连接到MCP服务器...")
+        print("连接到 MCP 服务器...")
         await client.initialize()
-        print("✅ 连接成功！\n")
+        print("连接成功！\n")
 
         if args.interactive or not args.query:
             # 交互模式
-            print("🤖 MCP数据库客户端 - 交互模式")
+            print("MCP数据库客户端 - 交互模式")
             print("输入 'quit', 'exit' 或 'q' 退出")
             print("输入 'help' 查看可用工具")
             print("输入 'health' 查看系统状态")
 
             while True:
                 try:
-                    query = input("\n💬 请输入您的问题: ").strip()
+                    query = input("\n请输入您的问题: ").strip()
                     if query.lower() in ['quit', 'exit', 'q']:
                         break
 
@@ -616,41 +617,41 @@ async def main():
 
                     if query.lower() == 'help':
                         tools = client.get_available_tools()
-                        print(f"\n📋 可用工具 ({len(tools)} 个):")
+                        print(f"\n可用工具 ({len(tools)} 个):")
                         for tool in tools[:10]:  # 只显示前10个
                             desc = tool['function']['description']
                             if len(desc) > 80:
                                 desc = desc[:80] + "..."
-                            print(f"  - {tool['function']['name']}: {desc}")
+                            print(f" - {tool['function']['name']}: {desc}")
                         if len(tools) > 10:
-                            print(f"  ... 还有 {len(tools) - 10} 个工具")
+                            print(f" ... 还有 {len(tools) - 10} 个工具")
                         continue
 
                     if query.lower() == 'health':
                         health = await client.health_check()
-                        print("\n🏥 系统状态:")
+                        print("\n 系统状态:")
                         print(json.dumps(health, indent=2, ensure_ascii=False))
                         continue
 
-                    print("🔄 处理中...")
+                    print("处理中...")
                     result = await client.process_query(query)
 
                     if result["success"]:
-                        print(f"✅ 回答: {result['answer']}")
+                        print(f"回答: {result['answer']}")
                         if result.get("tool_calls"):
-                            print(f"🔧 使用了 {len(result['tool_calls'])} 个工具")
+                            print(f"使用了 {len(result['tool_calls'])} 个工具")
                     else:
-                        print(f"❌ 错误: {result.get('error', '未知错误')}")
+                        print(f"错误: {result.get('error', '未知错误')}")
 
                 except KeyboardInterrupt:
-                    print("\n👋 接收到中断信号，正在退出...")
+                    print("\n接收到中断信号，正在退出...")
                     break
                 except Exception as e:
-                    print(f"❌ 处理错误: {e}")
+                    print(f"处理错误: {e}")
 
         else:
             # 单次查询模式
-            print(f"🔍 处理查询: {args.query}")
+            print(f"处理查询: {args.query}")
             result = await client.process_query(args.query)
 
             if result["success"]:
@@ -661,18 +662,18 @@ async def main():
                 sys.exit(1)
 
     except Exception as e:
-        print(f"❌ 启动失败: {e}")
+        print(f"启动失败: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)
     finally:
-        print("\n🧹 清理资源...")
+        print("\n清理资源...")
         await client.cleanup()
-        print("👋 再见！")
+        print("再见！")
 
 
 def cli_main():
-    """同步启动入口"""
+    """启动入口"""
     asyncio.run(main_test())
 
 

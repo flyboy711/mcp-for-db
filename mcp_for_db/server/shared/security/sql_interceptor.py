@@ -1,7 +1,8 @@
 import re
-import logging
 from typing import Dict, Any, Optional
 import asyncio
+
+from mcp_for_db import LOG_LEVEL
 from mcp_for_db.server.server_mysql.config import SessionConfigManager
 from mcp_for_db.server.shared.security.sql_parser import SQLParser
 from mcp_for_db.server.shared.security.db_scope_check import DatabaseScopeChecker, DatabaseScopeViolation
@@ -11,7 +12,7 @@ from mcp_for_db.server.shared.utils import get_logger, configure_logger
 
 logger = get_logger(__name__)
 configure_logger(log_filename="sql_security.log")
-logger.setLevel(logging.WARNING)
+logger.setLevel(LOG_LEVEL)
 
 
 class SecurityException(Exception):
@@ -261,7 +262,8 @@ class SQLInterceptor:
                 first_level = next(iter(allowed_levels))
                 if isinstance(first_level, str):
                     # 如果配置中存储的是字符串，则比较名称
-                    current_risk_name = current_risk_level.name if hasattr(current_risk_level, 'name') else str(current_risk_level)
+                    current_risk_name = current_risk_level.name if hasattr(current_risk_level, 'name') else str(
+                        current_risk_level)
                     is_level_allowed = current_risk_name in allowed_levels
                     allowed_names = list(allowed_levels)
                 else:
@@ -277,7 +279,8 @@ class SQLInterceptor:
                     f"当前操作风险等级({current_risk_level.name if hasattr(current_risk_level, 'name') else current_risk_level})不被允许执行，"
                     f"允许的风险等级: {', '.join(allowed_names)}",
                     {
-                        'risk_level': current_risk_level.name if hasattr(current_risk_level, 'name') else current_risk_level,
+                        'risk_level': current_risk_level.name if hasattr(current_risk_level,
+                                                                         'name') else current_risk_level,
                         'allowed_risk_levels': allowed_names
                     }
                 )

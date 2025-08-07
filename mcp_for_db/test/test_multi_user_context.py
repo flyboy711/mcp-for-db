@@ -1,13 +1,14 @@
 import asyncio
-import logging
 from typing import Dict, Any
+
+from mcp_for_db import LOG_LEVEL
 from mcp_for_db.server.server_mysql.config import SessionConfigManager, DatabaseManager, RequestContext
 from mcp_for_db.server.shared.utils import get_logger, configure_logger
 
 # 配置日志
 logger = get_logger(__name__)
 configure_logger(log_filename="resources.log")
-logger.setLevel(logging.INFO)
+logger.setLevel(LOG_LEVEL)
 
 # 模拟用户配置
 USER_CONFIGS = {

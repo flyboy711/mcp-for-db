@@ -1,9 +1,12 @@
 import contextvars
 from typing import Optional
-from mcp_for_db.server.server_mysql.config import SessionConfigManager, DatabaseManager
-import logging
 
-logger = logging.getLogger(__name__)
+from mcp_for_db import LOG_LEVEL
+from mcp_for_db.server.server_mysql.config import SessionConfigManager, DatabaseManager
+from mcp_for_db.server.shared.utils import get_logger
+
+logger = get_logger(__name__)
+logger.setLevel(LOG_LEVEL)
 
 # 定义上下文变量
 current_session_config = contextvars.ContextVar("session_config")

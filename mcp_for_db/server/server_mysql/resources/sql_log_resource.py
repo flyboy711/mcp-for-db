@@ -1,19 +1,20 @@
 import json
 import queue
 import time
-import logging
 import threading
 import os
 from urllib.parse import urlparse
 from typing import List, Dict
 from pydantic.networks import AnyUrl
 from mcp.types import Resource
+
+from mcp_for_db import LOG_LEVEL
 from mcp_for_db.server.common.base import BaseResource, ResourceRegistry
 from mcp_for_db.server.shared.utils import get_logger, configure_logger
 
 logger = get_logger(__name__)
 configure_logger(log_filename="resources.log")
-logger.setLevel(logging.WARNING)
+logger.setLevel(LOG_LEVEL)
 
 # 全局查询日志存储目录
 current_dir = os.path.dirname(os.path.abspath(__file__))

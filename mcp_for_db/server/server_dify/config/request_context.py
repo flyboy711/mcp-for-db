@@ -1,10 +1,11 @@
 import contextvars
 from typing import Optional
-import logging
-
+from mcp_for_db import LOG_LEVEL
 from mcp_for_db.server.server_dify.config import DiFySessionConfig
+from mcp_for_db.server.shared.utils import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
+logger.setLevel(LOG_LEVEL)
 
 # 定义上下文变量
 current_session_config = contextvars.ContextVar("session_config")

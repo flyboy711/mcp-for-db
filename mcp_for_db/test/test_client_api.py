@@ -5,7 +5,7 @@ import time
 def print_separator(title):
     """打印分隔符"""
     print(f"\n{'=' * 60}")
-    print(f"🧪 {title}")
+    print(f"{title}")
     print('=' * 60)
 
 
@@ -36,7 +36,7 @@ def test_health():
         result = handle_response(response, "健康检查")
 
         if result:
-            print(f"✅ 服务状态: {result['status']}")
+            print(f"服务状态: {result['status']}")
             print(f"服务器数量: {len(result['details'].get('servers', {}))}")
             print(f"工具总数: {result['details'].get('total_tools', 0)}")
             print(f"会话缓存: {result['details'].get('conversation_cache_size', 0)}")
@@ -51,11 +51,11 @@ def test_health():
         return False
 
     except requests.exceptions.ConnectionError:
-        print("❌ 无法连接到服务器，请确保API服务已启动")
-        print("   启动命令: python mcp_for_db/client/api.py")
+        print("无法连接到服务器，请确保API服务已启动")
+        print("启动命令: python mcp_for_db/client/api.py")
         return False
     except Exception as e:
-        print(f"❌ 健康检查出错: {e}")
+        print(f"健康检查出错: {e}")
         return False
 
 
@@ -71,7 +71,7 @@ def test_tools():
         result = handle_response(response, "获取工具列表")
 
         if result:
-            print(f"✅ 获取到 {len(result)} 个可用工具:")
+            print(f"获取到 {len(result)} 个可用工具:")
 
             # 按服务器分组显示
             tools_by_server = {}
@@ -85,15 +85,15 @@ def test_tools():
                 print(f"\n {server_name} ({len(tools)} 个工具):")
                 for tool in tools[:5]:  # 只显示前5个
                     desc = tool['description'][:60] + "..." if len(tool['description']) > 60 else tool['description']
-                    print(f"   • {tool['name']}: {desc}")
+                    print(f" • {tool['name']}: {desc}")
                 if len(tools) > 5:
-                    print(f"   ... 还有 {len(tools) - 5} 个工具")
+                    print(f" .. 还有 {len(tools) - 5} 个工具")
 
             return True
         return False
 
     except Exception as e:
-        print(f"❌ 获取工具列表出错: {e}")
+        print(f"获取工具列表出错: {e}")
         return False
 
 
@@ -118,10 +118,10 @@ def test_basic_query():
         result = handle_response(response, "基本查询")
 
         if result:
-            print(f"✅ 查询成功 (用时: {processing_time:.2f}s)")
-            print(f"🤖 回答: {result['answer']}")
-            print(f"🆔 会话ID: {result['conversation_id']}")
-            print(f"⏱️ 服务器处理时间: {result.get('processing_time', 0):.3f}s")
+            print(f"查询成功 (用时: {processing_time:.2f}s)")
+            print(f"回答: {result['answer']}")
+            print(f"会话ID: {result['conversation_id']}")
+            print(f"服务器处理时间: {result.get('processing_time', 0):.3f}s")
 
             # 显示工具调用信息
             if result.get('tool_calls'):
@@ -135,15 +135,15 @@ def test_basic_query():
             # 显示模型信息
             if result.get('model_info'):
                 model_info = result['model_info']
-                print(f"\n🧠 模型信息:")
-                print(f"   模型: {model_info.get('model', 'unknown')}")
-                print(f"   提供商: {model_info.get('provider', 'unknown')}")
+                print(f"\n模型信息:")
+                print(f"模型: {model_info.get('model', 'unknown')}")
+                print(f"提供商: {model_info.get('provider', 'unknown')}")
 
             return result['conversation_id']
         return None
 
     except Exception as e:
-        print(f"❌ 基本查询出错: {e}")
+        print(f"基本查询出错: {e}")
         return None
 
 
@@ -152,7 +152,7 @@ def test_conversation(conversation_id):
     print_separator("多轮对话测试")
 
     if not conversation_id:
-        print("⚠️ 跳过多轮对话测试（需要上一步的会话ID）")
+        print("跳过多轮对话测试（需要上一步的会话ID）")
         return False
 
     try:
@@ -174,12 +174,12 @@ def test_conversation(conversation_id):
         result = handle_response(response, "多轮对话")
 
         if result:
-            print(f"✅ 对话成功 (用时: {processing_time:.2f}s)")
-            print(f"🤖 回答: {result['answer']}")
+            print(f"对话成功 (用时: {processing_time:.2f}s)")
+            print(f"回答: {result['answer']}")
 
             # 显示工具调用
             if result.get('tool_calls'):
-                print(f"\n🔧 工具调用: {len(result['tool_calls'])} 个")
+                print(f"\n工具调用: {len(result['tool_calls'])} 个")
                 for tool_call in result['tool_calls']:
                     status_icon = "✅" if tool_call.get('success') else "❌"
                     print(f"   {status_icon} {tool_call['tool_name']}")
@@ -188,7 +188,7 @@ def test_conversation(conversation_id):
         return False
 
     except Exception as e:
-        print(f"❌ 多轮对话出错: {e}")
+        print(f"多轮对话出错: {e}")
         return False
 
 
@@ -211,16 +211,16 @@ def test_direct_tool_execution():
 
         if result:
             if result.get('success'):
-                print(f"✅ 工具执行成功")
-                print(f"📋 结果: {str(result['result'])[:200]}...")
-                print(f"⏱️ 执行时间: {result.get('processing_time', 0):.3f}s")
+                print(f"工具执行成功")
+                print(f"结果: {str(result['result'])[:200]}...")
+                print(f"执行时间: {result.get('processing_time', 0):.3f}s")
             else:
-                print(f"❌ 工具执行失败: {result.get('error', 'Unknown error')}")
+                print(f"工具执行失败: {result.get('error', 'Unknown error')}")
             return result.get('success', False)
         return False
 
     except Exception as e:
-        print(f"❌ 直接工具执行出错: {e}")
+        print(f"直接工具执行出错: {e}")
         return False
 
 
@@ -230,31 +230,31 @@ def test_conversation_management():
 
     try:
         url = "http://localhost:8000/conversations"
-        print(f"📡 请求: {url}")
+        print(f"请求: {url}")
 
         response = requests.get(url, timeout=10)
         result = handle_response(response, "获取会话列表")
 
         if result:
-            print(f"✅ 获取到 {len(result)} 个会话:")
+            print(f"获取到 {len(result)} 个会话:")
             for conv in result[:3]:  # 只显示前3个
-                print(f"  {conv['conversation_id'][:20]}...")
-                print(f"  消息数: {conv['message_count']}")
-                print(f"  摘要: {conv.get('summary', '无')[:50]}...")
-                print(f"  最后更新: {conv['last_updated'][:19]}")
+                print(f"{conv['conversation_id'][:20]}...")
+                print(f"消息数: {conv['message_count']}")
+                print(f"摘要: {conv.get('summary', '无')[:50]}...")
+                print(f"最后更新: {conv['last_updated'][:19]}")
                 print()
 
             return True
         return False
 
     except Exception as e:
-        print(f"❌ 会话管理测试出错: {e}")
+        print(f"会话管理测试出错: {e}")
         return False
 
 
 def run_all_tests():
     """运行所有测试"""
-    print("开始API接口测试")
+    print("开始 API 接口测试")
     print("=" * 60)
 
     results = {}
@@ -302,9 +302,9 @@ def run_all_tests():
         print(f"   {status_icon} {test_display_name}")
 
     if passed_tests == total_tests:
-        print(f"\n 所有测试通过！API服务运行正常")
+        print(f"\n所有测试通过！API服务运行正常")
     else:
-        print(f"\n 部分测试失败，请检查服务状态")
+        print(f"\n部分测试失败，请检查服务状态")
 
 
 if __name__ == "__main__":

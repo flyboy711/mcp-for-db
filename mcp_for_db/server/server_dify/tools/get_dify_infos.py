@@ -1,10 +1,10 @@
 import json
-import logging
 from typing import Dict, Any, Sequence
 
 from mcp import Tool
 from mcp.types import TextContent
 
+from mcp_for_db import LOG_LEVEL
 from mcp_for_db.server.server_dify.config import get_current_session_config
 from mcp_for_db.server.common.base import BaseHandler
 from mcp_for_db.server.server_dify.tools.dify_knowledge import get_dify_tool
@@ -12,7 +12,7 @@ from mcp_for_db.server.shared.utils import get_logger, configure_logger
 
 logger = get_logger(__name__)
 configure_logger(log_filename="dify_knowledge.log")
-logger.setLevel(logging.WARNING)
+logger.setLevel(LOG_LEVEL)
 
 
 class DiagnoseKnowledge(BaseHandler):

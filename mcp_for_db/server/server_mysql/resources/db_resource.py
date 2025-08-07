@@ -1,5 +1,4 @@
 import json
-import logging
 import csv
 from io import StringIO
 from urllib.parse import urlparse
@@ -7,13 +6,15 @@ import aiomysql
 from typing import List
 from pydantic.networks import AnyUrl
 from mcp.types import Resource
+
+from mcp_for_db import LOG_LEVEL
 from mcp_for_db.server.server_mysql.config import get_current_database_manager
 from mcp_for_db.server.common.base import BaseResource, ResourceRegistry
 from mcp_for_db.server.shared.utils import get_logger, configure_logger
 
 logger = get_logger(__name__)
 configure_logger(log_filename="resources.log")
-logger.setLevel(logging.WARNING)
+logger.setLevel(LOG_LEVEL)
 
 
 def _build_safe_query(table_name: str) -> str:

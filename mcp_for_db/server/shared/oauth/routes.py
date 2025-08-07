@@ -12,7 +12,7 @@ from mcp_for_db.server.shared.oauth.config import oauth_config
 async def login_page(request: Request) -> HTMLResponse:
     """返回登录页面"""
     try:
-        templates_dir = Path(__file__).parent.parent.parent / "templates"
+        templates_dir = Path(__file__).parent.parent / "templates"
         login_html = templates_dir / "login.html"
 
         with open(login_html, "r", encoding="utf-8") as f:

@@ -1,8 +1,7 @@
 import os.path
 from pathlib import Path
 from typing import Dict, Optional, List, Type
-from mcp_for_db.server.core import ConfigManager
-from mcp_for_db.server.core import BaseMCPServer
+from mcp_for_db.server.core import ConfigManager, BaseMCPServer
 
 
 class ServiceManager:

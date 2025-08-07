@@ -140,7 +140,6 @@ class DiFyMCPServer(BaseMCPServer):
 
     def get_prompt_registry(self):
         """获取提示词注册表"""
-
         return []
 
     def get_resource_registry(self):
