@@ -3,7 +3,7 @@ from typing import Dict, Any, Sequence
 from mcp import Tool
 from mcp.types import TextContent
 from pypinyin import pinyin, Style
-from mcp_for_db.server.common.base.base_tools import BaseHandler
+from mcp_for_db.server.common.base import BaseHandler
 from mcp_for_db.server.common.tools import ENHANCED_DESCRIPTIONS
 
 

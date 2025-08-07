@@ -5,14 +5,14 @@ from typing import Dict, Any, Sequence
 from mcp import Tool
 from mcp.types import TextContent
 
-from mcp_for_db.server.server_dify.config import DiFyConfig
-from mcp_for_db.server.common.base.base_tools import BaseHandler
+from mcp_for_db.server.server_dify.config import get_current_session_config
+from mcp_for_db.server.common.base import BaseHandler
 from mcp_for_db.server.server_dify.tools.dify_knowledge import get_dify_tool
 from mcp_for_db.server.shared.utils import get_logger, configure_logger
 
 logger = get_logger(__name__)
 configure_logger(log_filename="dify_knowledge.log")
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.WARNING)
 
 
 class DiagnoseKnowledge(BaseHandler):
@@ -29,7 +29,7 @@ class DiagnoseKnowledge(BaseHandler):
                     "dataset_id": {
                         "type": "string",
                         "description": "知识库ID",
-                        "default": DiFyConfig().DIFY_DATASET_ID
+                        "default": get_current_session_config().server_config.get("DIFY_DATASET_ID")
                     }
                 },
                 "required": []
@@ -39,7 +39,7 @@ class DiagnoseKnowledge(BaseHandler):
     async def run_tool(self, arguments: Dict[str, Any]) -> Sequence[TextContent]:
         """诊断知识库状态"""
         try:
-            dataset_id = arguments.get("dataset_id", DiFyConfig().DIFY_DATASET_ID)
+            dataset_id = arguments.get("dataset_id", get_current_session_config().server_config.get("DIFY_DATASET_ID"))
             dify_tool = get_dify_tool()
 
             logger.info(f"诊断知识库: {dataset_id}")

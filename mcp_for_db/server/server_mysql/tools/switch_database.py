@@ -4,11 +4,11 @@ from mcp import Tool
 from mcp.types import TextContent
 
 from mcp_for_db.server.common import ENHANCED_DESCRIPTIONS
-from mcp_for_db.server.common.base.base_tools import BaseHandler
+from mcp_for_db.server.common.base import BaseHandler
 from mcp_for_db.server.shared.utils import get_logger, configure_logger
 
 # 导入上下文获取函数
-from mcp_for_db.server.server_mysql.config.request_context import get_current_session_config, get_current_database_manager
+from mcp_for_db.server.server_mysql.config import get_current_session_config, get_current_database_manager
 
 logger = get_logger(__name__)
 configure_logger(log_filename="sql_tools.log")

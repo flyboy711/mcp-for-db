@@ -6,6 +6,10 @@ from dataclasses import dataclass
 from dotenv import load_dotenv
 from mcp_for_db.server.core import EnvironmentType, SQLRiskLevel, DatabaseAccessLevel, strtobool
 
+"""
+该脚本主要接收 ConfigManager 类分发来的关于 MYSQL 的一些配置信息的格式化处理，如果没有则加载默认配置的 mysql.env 配置
+"""
+
 
 @dataclass
 class ConfigSchema:
@@ -51,34 +55,34 @@ class ConfigNormalizer:
         return allowed_levels or {SQLRiskLevel.LOW}
 
     @staticmethod
-    def _parse_access_level(value: Any) -> str:
+    def _parse_access_level(v: Any) -> str:
         """解析数据库访问级别"""
         try:
-            return DatabaseAccessLevel(str(value).lower().strip()).value
+            return DatabaseAccessLevel(str(v).lower().strip()).value
         except (ValueError, AttributeError):
             return DatabaseAccessLevel.PERMISSIVE.value
 
     @staticmethod
-    def _parse_env_type(value: Any) -> str:
+    def _parse_env_type(v: Any) -> str:
         """解析环境类型"""
         try:
-            env_str = str(value).lower().strip()
-            if env_str in ('development', 'production', 'testing', 'staging'):
+            env_str = str(v).lower().strip()
+            if env_str in ('development', 'production', 'testing'):
                 return EnvironmentType(env_str).value
             return EnvironmentType.DEVELOPMENT.value
         except (ValueError, AttributeError):
             return EnvironmentType.DEVELOPMENT.value
 
     @staticmethod
-    def _parse_blocked_patterns(value: Any) -> List[str]:
+    def _parse_blocked_patterns(v: Any) -> List[str]:
         """解析阻止模式"""
-        if isinstance(value, str):
-            value = value.strip('\'"')
-            if not value:
+        if isinstance(v, str):
+            v = v.strip('\'"')
+            if not v:
                 return ConfigNormalizer._get_default_blocked_patterns()
-            return [p.strip().upper() for p in value.split(',') if p.strip()]
-        elif isinstance(value, list):
-            patterns = [str(p).strip().upper() for p in value if str(p).strip()]
+            return [p.strip().upper() for p in v.split(',') if p.strip()]
+        elif isinstance(v, list):
+            patterns = [str(p).strip().upper() for p in v if str(p).strip()]
             return patterns if patterns else ConfigNormalizer._get_default_blocked_patterns()
         return ConfigNormalizer._get_default_blocked_patterns()
 
@@ -88,17 +92,17 @@ class ConfigNormalizer:
                 'DROP INDEX']
 
     @classmethod
-    def normalize(cls, key: str, value: Any, type_name: str) -> Any:
+    def normalize(cls, v: Any, type_name: str) -> Any:
         """通用标准化方法"""
-        if value is None:
+        if v is None:
             return None
 
         converter = cls.TYPE_CONVERTERS.get(type_name, cls.TYPE_CONVERTERS['str'])
         try:
-            return converter(value)
+            return converter(v)
         except (ValueError, TypeError) as e:
             # 记录错误但不阻断处理
-            return value
+            return v
 
 
 class ConfigSchemaRegistry:
@@ -178,12 +182,12 @@ class EnvironmentLoader:
         config = {}
         schemas = ConfigSchemaRegistry.get_all_schemas()
 
-        for key, schema in schemas.items():
-            env_value = os.getenv(key)
+        for k, schema in schemas.items():
+            env_value = os.getenv(k)
             if env_value is not None:
-                config[key] = ConfigNormalizer.normalize(key, env_value, schema.type_converter)
+                config[k] = ConfigNormalizer.normalize(env_value, str(schema.type_converter))
             else:
-                config[key] = schema.default
+                config[k] = schema.default
 
         return config
 
@@ -221,13 +225,13 @@ class SessionConfigManager:
 
     def __init__(self, initial_config: Optional[Dict[str, Any]] = None, service_name: str = "mysql"):
         self.service_name = service_name
-        self.config: Dict[str, Any] = {}
+        self.server_config: Dict[str, Any] = {}
         self._config_hash = ''
         self._global_env_type: Optional[EnvironmentType] = None
 
         # 加载配置
         if initial_config is not None:
-            self.config = self._normalize_external_config(initial_config)
+            self.server_config = self._normalize_external_config(initial_config)
         else:
             self._load_from_env()
 
@@ -249,18 +253,18 @@ class SessionConfigManager:
         schemas = ConfigSchemaRegistry.get_all_schemas()
 
         # 标准化输入的配置
-        for key, value in raw_config.items():
-            key_upper = key.upper()
+        for k, v in raw_config.items():
+            key_upper = k.upper()
             schema = schemas.get(key_upper)
 
             if schema:
-                normalized[key_upper] = ConfigNormalizer.normalize(key_upper, value, schema.type_converter)
+                normalized[key_upper] = ConfigNormalizer.normalize(v, schema.type_converter)
             else:
                 # 未知配置项直接存储
-                normalized[key_upper] = value
+                normalized[key_upper] = v
 
         # 应用默认值
-        self._apply_defaults(normalized, schemas)
+        SessionConfigManager._apply_defaults(normalized, schemas)
 
         # 应用环境规则
         env_type = self._get_global_env_type()
@@ -268,24 +272,25 @@ class SessionConfigManager:
 
         return normalized
 
-    def _apply_defaults(self, config: Dict[str, Any], schemas: Dict[str, ConfigSchema]) -> None:
+    @staticmethod
+    def _apply_defaults(config: Dict[str, Any], schemas: Dict[str, ConfigSchema]) -> None:
         """应用默认值"""
-        for key, schema in schemas.items():
-            if key not in config:
-                config[key] = schema.default
+        for k, schema in schemas.items():
+            if k not in config:
+                config[k] = schema.default
 
     def _load_from_env(self) -> None:
         """从环境文件加载配置"""
         loader = EnvironmentLoader(self.service_name)
-        self.config = loader.load_config_from_env()
+        self.server_config = loader.load_config_from_env()
 
         # 应用环境规则
         env_type = self._get_global_env_type()
-        EnvironmentRuleEngine.apply_environment_rules(self.config, env_type)
+        EnvironmentRuleEngine.apply_environment_rules(self.server_config, env_type)
 
     def _update_hash(self) -> None:
         """更新配置哈希"""
-        self._config_hash = hashlib.md5(str(sorted(self.config.items())).encode('utf-8')).hexdigest()
+        self._config_hash = hashlib.md5(str(sorted(self.server_config.items())).encode('utf-8')).hexdigest()
 
     def get_global_env_type(self) -> EnvironmentType:
         """获取全局环境类型"""
@@ -293,113 +298,27 @@ class SessionConfigManager:
 
     def get_mysql_config(self) -> Dict[str, Any]:
         """获取MySQL相关配置"""
-        return {k: v for k, v in self.config.items() if k.startswith('MYSQL_')}
+        return {k: v for k, v in self.server_config.items() if k.startswith('MYSQL_')}
 
     def update(self, new_cfg: Dict[str, Any]) -> None:
         """更新配置"""
         normalized_cfg = self._normalize_external_config(new_cfg)
-        self.config.update(normalized_cfg)
+        self.server_config.update(normalized_cfg)
         if 'ENV_TYPE' in normalized_cfg:
             self._global_env_type = None
         self._update_hash()
 
-    def get(self, key: str, default: Any = None) -> Any:
+    def get(self, k: str, default: Any = None) -> Any:
         """获取配置项"""
-        return self.config.get(key, default)
+        return self.server_config.get(k, default)
 
     def get_all(self) -> Dict[str, Any]:
         """获取所有配置"""
-        return self.config.copy()
+        return self.server_config.copy()
 
     def get_config_hash(self) -> str:
         """获取配置哈希值"""
         return self._config_hash
-
-
-class EnvFileManager:
-    """环境文件管理器 - 简化版本"""
-
-    @staticmethod
-    def update_config_file(updates: Dict[str, Any], env_path: str) -> None:
-        """通用的配置文件更新方法"""
-        # 确保目录存在
-        Path(env_path).parent.mkdir(parents=True, exist_ok=True)
-
-        # 读取现有内容
-        lines = []
-        if os.path.exists(env_path):
-            with open(env_path, "r", encoding="utf-8") as f:
-                lines = f.readlines()
-
-        # 更新或添加配置
-        updated_keys = set()
-        new_lines = []
-
-        # 处理现有行
-        for line in lines:
-            stripped_line = line.strip()
-            if not stripped_line or stripped_line.startswith("#"):
-                new_lines.append(line)
-                continue
-
-            if "=" in line:
-                key = line.split("=", 1)[0].strip()
-                if key in updates:
-                    # 保留注释
-                    comment = ""
-                    if "#" in line:
-                        comment = " " + line.split("#", 1)[1].rstrip() if "#" in line.split("=", 1)[1] else ""
-
-                    formatted_value = EnvFileManager._format_value(updates[key])
-                    new_lines.append(f"{key}={formatted_value}{comment}\n")
-                    updated_keys.add(key)
-                else:
-                    new_lines.append(line)
-            else:
-                new_lines.append(line)
-
-        # 添加新的配置项
-        for key, value in updates.items():
-            if key not in updated_keys:
-                formatted_value = EnvFileManager._format_value(value)
-                new_lines.append(f"{key}={formatted_value}\n")
-
-        # 写入文件
-        with open(env_path, "w", encoding="utf-8") as f:
-            f.writelines(new_lines)
-
-    @staticmethod
-    def update_mysql_config(updates: Dict[str, Any], env_path: str = None) -> None:
-        """更新MySQL配置"""
-        if env_path is None:
-            root_dir = Path(__file__).parent.parent.parent.parent.parent
-            env_path = root_dir / "envs" / "mysql.env"
-        EnvFileManager.update_config_file(updates, str(env_path))
-
-    @staticmethod
-    def update_global_config(updates: Dict[str, Any], env_path: str = None) -> None:
-        """更新全局配置"""
-        if env_path is None:
-            root_dir = Path(__file__).parent.parent.parent.parent.parent
-            env_path = root_dir / "envs" / "common.env"
-        EnvFileManager.update_config_file(updates, str(env_path))
-
-    @staticmethod
-    def _format_value(value: Any) -> str:
-        """格式化配置值"""
-        if isinstance(value, list):
-            formatted_value = ','.join(str(v) for v in value)
-        else:
-            formatted_value = str(value)
-
-        # 如果值包含特殊字符，添加引号
-        if any(char in formatted_value for char in " #,\"'") and not formatted_value.startswith(('"', "'")):
-            if '"' in formatted_value:
-                formatted_value = f"'{formatted_value}'"
-            else:
-                formatted_value = f'"{formatted_value}"'
-
-        return formatted_value
 
 
 # 示例使用
@@ -449,18 +368,6 @@ if __name__ == "__main__":
     session_config.update(new_config)
     print("\n更新后的配置:")
     print(f"MySQL端口: {session_config.get('MYSQL_PORT')}")
-
-    updates = {
-        "MYSQL_PORT": "13309",
-        "MYSQL_USER": "videx1",
-    }
-
-    # 获取当前文件所在目录的绝对路径
-    root_dir = Path(__file__).parent.parent.parent.parent.parent
-    env_file = os.path.join(root_dir, "envs", "mysql.env")
-
-    EnvFileManager.update_mysql_config(updates, env_file)
-    print("\n环境变量更新成功\n")
 
     session_config1 = SessionConfigManager()
     print(f"MySQL端口: {session_config1.get('MYSQL_PORT')} \n\n")

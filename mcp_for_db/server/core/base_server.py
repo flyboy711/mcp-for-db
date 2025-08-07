@@ -17,24 +17,24 @@ from starlette.responses import Response
 from starlette.routing import Route, Mount
 from starlette.types import Scope, Receive, Send
 
-from mcp_for_db.server.shared.utils import get_logger
+from mcp_for_db.server.shared.utils import get_logger, configure_logger
 from mcp_for_db.server.core import ConfigManager
 
 
 class BaseMCPServer(ABC):
-    """MCP服务基类"""
+    """MCP 多服务基类"""
 
     def __init__(self, service_name: str, config_manager: ConfigManager):
+        self.server = Server(f"mcp-{service_name}")
         self.service_name = service_name
         self.config_manager = config_manager
-        self.config = config_manager.get_service_config(service_name)
-        self.server = Server(f"mcp-{service_name}")
+        self.server_config = config_manager.get_service_config(service_name)
         self.logger = get_logger(f"{service_name}_server")
         self.resources_initialized = False
         self.server_setup_completed = False
-
         # 设置日志级别
-        self.logger.setLevel(logging.WARNING)
+        self.logger.setLevel(logging.INFO)
+        configure_logger(log_filename=f"{service_name}_server.log")
 
     @abstractmethod
     async def initialize_resources(self):
@@ -61,10 +61,14 @@ class BaseMCPServer(ABC):
         """获取资源注册表（由子类实现）"""
         pass
 
-    @abstractmethod
     async def create_request_context(self):
-        """创建请求上下文（由子类实现）"""
-        pass
+        """创建请求上下文（子类可以重写）"""
+
+        @contextlib.asynccontextmanager
+        async def default_context():
+            yield
+
+        return default_context()
 
     async def setup_server(self):
         """设置服务器路由"""
@@ -78,19 +82,17 @@ class BaseMCPServer(ABC):
         @self.server.list_resources()
         async def handle_list_resources() -> List[Resource]:
             try:
-                async with await self.create_request_context():
-                    registry = self.get_resource_registry()
-                    if registry is None:
-                        self.logger.warning("资源注册表未初始化，返回空列表")
-                        return []
-
-                    # 检查注册表方法类型
-                    if hasattr(registry, 'get_all_resources'):
-                        if asyncio.iscoroutinefunction(registry.get_all_resources):
-                            return await registry.get_all_resources()
-                        else:
-                            return registry.get_all_resources()
+                registry = self.get_resource_registry()
+                if registry is None:
+                    self.logger.warning("资源注册表未初始化，返回空列表")
                     return []
+
+                if hasattr(registry, 'get_all_resources'):
+                    if asyncio.iscoroutinefunction(registry.get_all_resources):
+                        return await registry.get_all_resources()
+                    else:
+                        return registry.get_all_resources()
+                return []
             except Exception as e:
                 self.logger.error(f"获取资源列表失败: {str(e)}", exc_info=True)
                 return []
@@ -99,24 +101,22 @@ class BaseMCPServer(ABC):
         async def handle_read_resource(uri: AnyUrl) -> str:
             try:
                 self.logger.info(f"开始读取资源: {uri}")
-                async with await self.create_request_context():
-                    registry = self.get_resource_registry()
-                    if registry is None:
-                        raise ValueError("资源注册表未初始化")
+                registry = self.get_resource_registry()
+                if registry is None:
+                    raise ValueError("资源注册表未初始化")
 
-                    # 检查方法类型
-                    if hasattr(registry, 'get_resource'):
-                        if asyncio.iscoroutinefunction(registry.get_resource):
-                            content = await registry.get_resource(uri)
-                        else:
-                            content = registry.get_resource(uri)
+                if hasattr(registry, 'get_resource'):
+                    if asyncio.iscoroutinefunction(registry.get_resource):
+                        content = await registry.get_resource(uri)
                     else:
-                        content = None
+                        content = registry.get_resource(uri)
+                else:
+                    content = None
 
-                    if content is None:
-                        content = "null"
-                    self.logger.info(f"资源 {uri} 读取成功，内容长度: {len(content)}")
-                    return content
+                if content is None:
+                    content = "null"
+                self.logger.info(f"资源 {uri} 读取成功，内容长度: {len(content)}")
+                return content
             except Exception as e:
                 self.logger.error(f"读取资源失败: {str(e)}", exc_info=True)
                 raise
@@ -126,23 +126,21 @@ class BaseMCPServer(ABC):
         async def handle_list_prompts() -> List[Prompt]:
             try:
                 self.logger.info("开始处理获取提示模板列表请求")
-                async with await self.create_request_context():
-                    registry = self.get_prompt_registry()
-                    if registry is None:
-                        self.logger.warning("提示词注册表未初始化，返回空列表")
-                        return []
+                registry = self.get_prompt_registry()
+                if registry is None:
+                    self.logger.warning("提示词注册表未初始化，返回空列表")
+                    return []
 
-                    # 检查方法类型
-                    if hasattr(registry, 'get_all_prompts'):
-                        if asyncio.iscoroutinefunction(registry.get_all_prompts):
-                            prompts = await registry.get_all_prompts()
-                        else:
-                            prompts = registry.get_all_prompts()
+                if hasattr(registry, 'get_all_prompts'):
+                    if asyncio.iscoroutinefunction(registry.get_all_prompts):
+                        prompts = await registry.get_all_prompts()
                     else:
-                        prompts = []
+                        prompts = registry.get_all_prompts()
+                else:
+                    prompts = []
 
-                    self.logger.info(f"成功获取到 {len(prompts)} 个提示模板")
-                    return prompts
+                self.logger.info(f"成功获取到 {len(prompts)} 个提示模板")
+                return prompts
             except Exception as e:
                 self.logger.error(f"获取提示词列表失败: {str(e)}", exc_info=True)
                 return []
@@ -153,24 +151,22 @@ class BaseMCPServer(ABC):
             self.logger.debug(f"请求参数: {arguments}")
 
             try:
-                async with await self.create_request_context():
-                    registry = self.get_prompt_registry()
-                    if registry is None:
-                        raise ValueError("提示词注册表未初始化")
+                registry = self.get_prompt_registry()
+                if registry is None:
+                    raise ValueError("提示词注册表未初始化")
 
-                    # 检查方法类型
-                    if hasattr(registry, 'get_prompt'):
-                        if asyncio.iscoroutinefunction(registry.get_prompt):
-                            prompt = await registry.get_prompt(name)
-                        else:
-                            prompt = registry.get_prompt(name)
+                if hasattr(registry, 'get_prompt'):
+                    if asyncio.iscoroutinefunction(registry.get_prompt):
+                        prompt = await registry.get_prompt(name)
                     else:
-                        raise ValueError(f"未找到提示模板: {name}")
+                        prompt = registry.get_prompt(name)
+                else:
+                    raise ValueError(f"未找到提示模板: {name}")
 
-                    self.logger.debug(f"找到提示模板 '{name}'")
-                    result = await prompt.run_prompt(arguments)
-                    self.logger.info(f"提示模板 '{name}' 执行成功")
-                    return result
+                self.logger.debug(f"找到提示模板 '{name}'")
+                result = await prompt.run_prompt(arguments)
+                self.logger.info(f"提示模板 '{name}' 执行成功")
+                return result
             except Exception as e:
                 self.logger.error(f"处理提示模板 '{name}' 时出错: {str(e)}")
                 raise
@@ -180,23 +176,21 @@ class BaseMCPServer(ABC):
         async def list_tools() -> List[Tool]:
             try:
                 self.logger.info("开始处理获取工具列表请求")
-                async with await self.create_request_context():
-                    registry = self.get_tool_registry()
-                    if registry is None:
-                        self.logger.warning("工具注册表未初始化，返回空列表")
-                        return []
+                registry = self.get_tool_registry()
+                if registry is None:
+                    self.logger.warning("工具注册表未初始化，返回空列表")
+                    return []
 
-                    # 检查方法类型
-                    if hasattr(registry, 'get_all_tools'):
-                        if asyncio.iscoroutinefunction(registry.get_all_tools):
-                            tools = await registry.get_all_tools()
-                        else:
-                            tools = registry.get_all_tools()
+                if hasattr(registry, 'get_all_tools'):
+                    if asyncio.iscoroutinefunction(registry.get_all_tools):
+                        tools = await registry.get_all_tools()
                     else:
-                        tools = []
+                        tools = registry.get_all_tools()
+                else:
+                    tools = []
 
-                    self.logger.info(f"成功获取到 {len(tools)} 个工具")
-                    return tools
+                self.logger.info(f"成功获取到 {len(tools)} 个工具")
+                return tools
             except Exception as e:
                 self.logger.error(f"获取工具列表失败: {str(e)}", exc_info=True)
                 return []
@@ -207,24 +201,22 @@ class BaseMCPServer(ABC):
             self.logger.debug(f"工具参数: {arguments}")
 
             try:
-                async with await self.create_request_context():
-                    registry = self.get_tool_registry()
-                    if registry is None:
-                        raise ValueError("工具注册表未初始化")
+                registry = self.get_tool_registry()
+                if registry is None:
+                    raise ValueError("工具注册表未初始化")
 
-                    # 检查方法类型
-                    if hasattr(registry, 'get_tool'):
-                        if asyncio.iscoroutinefunction(registry.get_tool):
-                            tool = await registry.get_tool(name)
-                        else:
-                            tool = registry.get_tool(name)
+                if hasattr(registry, 'get_tool'):
+                    if asyncio.iscoroutinefunction(registry.get_tool):
+                        tool = await registry.get_tool(name)
                     else:
-                        raise ValueError(f"未找到工具: {name}")
+                        tool = registry.get_tool(name)
+                else:
+                    raise ValueError(f"未找到工具: {name}")
 
-                    self.logger.debug(f"找到工具 '{name}'")
-                    result = await tool.run_tool(arguments)
-                    self.logger.info(f"工具 '{name}' 调用成功")
-                    return result
+                self.logger.debug(f"找到工具 '{name}'")
+                result = await tool.run_tool(arguments)
+                self.logger.info(f"工具 '{name}' 调用成功")
+                return result
             except Exception as e:
                 self.logger.error(f"调用工具 '{name}' 时出错: {str(e)}")
                 raise
@@ -267,7 +259,8 @@ class BaseMCPServer(ABC):
             self.resources_initialized = False
             self.server_setup_completed = False
 
-    # 其余方法保持不变...
+    ####################################################################################################################
+    ####################################################################################################################
     async def run_stdio(self):
         """运行标准输入输出模式的服务器"""
         self.logger.info("启动标准输入输出(stdio)模式服务器")
@@ -278,11 +271,16 @@ class BaseMCPServer(ABC):
             async with stdio_server() as (read_stream, write_stream):
                 try:
                     self.logger.debug("初始化流式传输接口")
-                    await self.server.run(
-                        read_stream,
-                        write_stream,
-                        self.server.create_initialization_options()
-                    )
+
+                    # 在协议层面创建上下文
+                    context = await self.create_request_context()
+                    async with context:
+                        await self.server.run(
+                            read_stream,
+                            write_stream,
+                            self.server.create_initialization_options()
+                        )
+
                     self.logger.info("标准输入输出模式服务结束")
                 except Exception as e:
                     self.logger.critical(f"标准输入输出模式服务器错误: {str(e)}")
@@ -291,7 +289,6 @@ class BaseMCPServer(ABC):
             await self._close_global_resources()
             await asyncio.sleep(0.5)
 
-    # SSE和HTTP方法保持不变但移除请求上下文创建逻辑
     def run_sse(self, host: str = "0.0.0.0", port: int = 9000):
         """运行SSE模式的服务器"""
         self.logger.info("启动SSE(Server-Sent Events)模式服务器")
@@ -300,14 +297,17 @@ class BaseMCPServer(ABC):
         async def handle_sse(request):
             self.logger.info(f"新的SSE连接 [client={request.client}]")
 
-            async with sse.connect_sse(
-                    request.scope, request.receive, request._send
-            ) as streams:
-                try:
-                    await self.server.run(streams[0], streams[1], self.server.create_initialization_options())
-                except Exception as e:
-                    self.logger.error(f"SSE连接处理异常: {str(e)}")
-                    raise
+            # 在协议层面创建上下文
+            context = await self.create_request_context()
+            async with context:
+                async with sse.connect_sse(
+                        request.scope, request.receive, request._send
+                ) as streams:
+                    try:
+                        await self.server.run(streams[0], streams[1], self.server.create_initialization_options())
+                    except Exception as e:
+                        self.logger.error(f"SSE连接处理异常: {str(e)}")
+                        raise
 
             self.logger.info(f"SSE连接断开 [client={request.client}]")
             return Response(status_code=204)
@@ -366,7 +366,11 @@ class BaseMCPServer(ABC):
             else:
                 self.logger.info(f"新的HTTP请求 [method={scope['method']}, path={scope['path']}]")
                 try:
-                    await session_manager.handle_request(scope, receive, send)
+                    # 在协议层面创建上下文
+                    context = await self.create_request_context()
+                    async with context:
+                        await session_manager.handle_request(scope, receive, send)
+
                     self.logger.info(f"HTTP请求处理完成 [method={scope['method']}, path={scope['path']}]")
                 except Exception as e:
                     self.logger.error(f"HTTP请求处理异常: {str(e)}")

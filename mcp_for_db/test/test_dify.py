@@ -1,51 +1,56 @@
 import asyncio
 
-from mcp_for_db.server.server_dify.config import DiFyConfig
+from mcp_for_db.server.core import ConfigManager
+from mcp_for_db.server.server_dify.config import DiFySessionConfig, RequestContext, get_current_session_config
 from mcp_for_db.server.server_dify.tools import RetrieveKnowledge, DiagnoseKnowledge
 
 
 async def test_dify_tools():
     """测试DiFy工具"""
-    try:
-        print("=== 知识库诊断 ===")
-        diagnose_tool = DiagnoseKnowledge()
-        result = await diagnose_tool.run_tool({
-            "dataset_id": DiFyConfig().DIFY_DATASET_ID
-        })
-        print_result("知识库诊断", result)
+    config_manager = ConfigManager()
+    session_config = DiFySessionConfig(config_manager.get_service_config("dify"))
+    async with RequestContext(session_config):
 
-        print("=== 测试智能检索 (自动降级) ===")
-        retrieve_tool = RetrieveKnowledge()
-        result = await retrieve_tool.run_tool({
-            "dataset_id": DiFyConfig().DIFY_DATASET_ID,
-            "query": "OcaseBase",
-            "search_method": "auto",  # 使用自动模式
-            "top_k": 3,
-            "auto_fallback": True
-        })
-        print_result("智能检索", result)
+        try:
+            print("=== 知识库诊断 ===")
+            diagnose_tool = DiagnoseKnowledge()
+            result = await diagnose_tool.run_tool({
+                "dataset_id": get_current_session_config().server_config.get("DIFY_DATASET_ID"),
+            })
+            print_result("知识库诊断", result)
 
-        print("=== 测试关键词搜索 ===")
-        result = await retrieve_tool.run_tool({
-            "dataset_id": DiFyConfig().DIFY_DATASET_ID,
-            "query": "OcaseBase",
-            "search_method": "keyword_search",
-            "top_k": 2
-        })
-        print_result("关键词搜索", result)
+            print("=== 测试智能检索 (自动降级) ===")
+            retrieve_tool = RetrieveKnowledge()
+            result = await retrieve_tool.run_tool({
+                "dataset_id": get_current_session_config().server_config.get("DIFY_DATASET_ID"),
+                "query": "OceanBase",
+                "search_method": "auto",  # 使用自动模式
+                "top_k": 3,
+                "auto_fallback": True
+            })
+            print_result("智能检索", result)
 
-        print("=== 测试语义搜索 ===")
-        result = await retrieve_tool.run_tool({
-            "dataset_id": DiFyConfig().DIFY_DATASET_ID,
-            "query": "OcaseBase架构原理是什么？",
-            "search_method": "semantic_search",
-            "auto_fallback": False,  # 不使用降级
-            "top_k": 2
-        })
-        print_result("语义搜索(无降级)", result)
+            print("=== 测试关键词搜索 ===")
+            result = await retrieve_tool.run_tool({
+                "dataset_id": get_current_session_config().server_config.get("DIFY_DATASET_ID"),
+                "query": "OceanBase",
+                "search_method": "keyword_search",
+                "top_k": 2
+            })
+            print_result("关键词搜索", result)
 
-    except Exception as e:
-        print(f"测试过程中出错: {str(e)}")
+            print("=== 测试语义搜索 ===")
+            result = await retrieve_tool.run_tool({
+                "dataset_id": get_current_session_config().server_config.get("DIFY_DATASET_ID"),
+                "query": "OceanBase架构原理是什么？",
+                "search_method": "semantic_search",
+                "auto_fallback": False,  # 不使用降级
+                "top_k": 2
+            })
+            print_result("语义搜索(无降级)", result)
+
+        except Exception as e:
+            print(f"测试过程中出错: {str(e)}")
 
 
 def print_result(test_name: str, result):

@@ -3,12 +3,12 @@ import json
 import aiohttp
 import logging
 from typing import Optional
-from mcp_for_db.server.server_dify.config import DiFyConfig
+from mcp_for_db.server.server_dify.config import get_current_session_config
 from mcp_for_db.server.shared.utils import get_logger, configure_logger
 
 logger = get_logger(__name__)
 configure_logger(log_filename="dify_knowledge.log")
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.WARNING)
 
 
 class VectorIndexNotFoundError(Exception):
@@ -161,8 +161,8 @@ class DiFyKnowledgeBaseTool:
 # 全局DiFy工具实例
 def get_dify_tool():
     """获取DiFy工具实例"""
-    dify_config = DiFyConfig()
+    dify_config = get_current_session_config()
     return DiFyKnowledgeBaseTool(
-        api_key=dify_config.DIFY_API_KEY,
-        base_url=dify_config.DIFY_BASE_URL
+        api_key=dify_config.server_config.get("DIFY_API_KEY"),
+        base_url=dify_config.server_config.get("DIFY_BASE_URL")
     )

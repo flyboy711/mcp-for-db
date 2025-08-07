@@ -1,4 +1,4 @@
-from .config_manager import EnvironmentType, SQLRiskLevel, DatabaseAccessLevel, ConfigManager, strtobool
+from .config_manager import EnvironmentType, SQLRiskLevel, DatabaseAccessLevel, ConfigManager, strtobool, EnvFileManager
 from .base_server import BaseMCPServer
 from .service_manager import ServiceManager
 
@@ -9,5 +9,6 @@ __all__ = [
     "ConfigManager",
     "BaseMCPServer",
     "ServiceManager",
-    "strtobool"
+    "strtobool",
+    "EnvFileManager"
 ]

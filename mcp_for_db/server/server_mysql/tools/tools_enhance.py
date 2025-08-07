@@ -4,9 +4,7 @@ from mcp import Tool
 from mcp.types import TextContent
 
 from mcp_for_db.server.common import ENHANCED_DESCRIPTIONS
-from mcp_for_db.server.common.base.base_tools import ToolSelector
-from mcp_for_db.server.common.base.base_tools import WorkflowOrchestrator
-from mcp_for_db.server.common.base.base_tools import BaseHandler, ToolRegistry
+from mcp_for_db.server.common.base import ToolSelector, BaseHandler, ToolRegistry, WorkflowOrchestrator
 from mcp_for_db.server.shared.utils import get_logger, configure_logger
 
 logger = get_logger(__name__)

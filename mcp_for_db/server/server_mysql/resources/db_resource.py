@@ -7,8 +7,8 @@ import aiomysql
 from typing import List
 from pydantic.networks import AnyUrl
 from mcp.types import Resource
-from mcp_for_db.server.server_mysql.config.request_context import get_current_database_manager
-from mcp_for_db.server.common.base.base_resource import BaseResource, ResourceRegistry
+from mcp_for_db.server.server_mysql.config import get_current_database_manager
+from mcp_for_db.server.common.base import BaseResource, ResourceRegistry
 from mcp_for_db.server.shared.utils import get_logger, configure_logger
 
 logger = get_logger(__name__)

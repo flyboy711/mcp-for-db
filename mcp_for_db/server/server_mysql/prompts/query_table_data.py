@@ -2,7 +2,7 @@ from typing import Dict, Any
 from mcp import GetPromptResult
 from mcp.types import Prompt, TextContent, PromptMessage, PromptArgument
 
-from mcp_for_db.server.common.base.base_prompt import BasePrompt
+from mcp_for_db.server.common.base import BasePrompt
 
 
 class QueryTableData(BasePrompt):

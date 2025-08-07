@@ -1,11 +1,11 @@
 import logging
 from typing import Dict, Sequence, Any
 from mcp_for_db.server.common import ENHANCED_DESCRIPTIONS
-from mcp_for_db.server.server_mysql.config.request_context import get_current_database_manager
+from mcp_for_db.server.server_mysql.config import get_current_database_manager
 from mcp_for_db.server.shared.utils import configure_logger, get_logger
 from mcp import Tool
 from mcp.types import TextContent
-from mcp_for_db.server.common.base.base_tools import BaseHandler
+from mcp_for_db.server.common.base import BaseHandler
 from mcp_for_db.server.server_mysql.tools import ExecuteSQL
 
 logger = get_logger(__name__)

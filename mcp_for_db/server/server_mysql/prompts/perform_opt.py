@@ -1,7 +1,7 @@
 from typing import Dict, Any
 
 from mcp.types import TextContent, Prompt, PromptArgument, GetPromptResult, PromptMessage
-from mcp_for_db.server.common.base.base_prompt import BasePrompt
+from mcp_for_db.server.common.base import BasePrompt
 
 
 class PerformanceOptimizationPrompt(BasePrompt):

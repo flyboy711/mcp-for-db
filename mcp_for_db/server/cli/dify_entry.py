@@ -7,13 +7,8 @@ from mcp_for_db.server.core import ServiceManager
 @click.option("--mode", default="stdio", type=click.Choice(["stdio", "sse", "streamable_http"]), help="运行模式")
 @click.option("--host", default="0.0.0.0", help="主机地址")
 @click.option("--port", type=int, help="端口号")
-@click.option("--envfile", help="自定义环境配置文件")
-def main(mode, host, port, envfile):
+def main(mode, host, port):
     """DiFy MCP服务启动器"""
-
-    if envfile:
-        from dotenv import load_dotenv
-        load_dotenv(envfile)
 
     service_manager = ServiceManager()
 

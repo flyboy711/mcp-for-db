@@ -15,11 +15,12 @@ class ServiceManager:
         self._register_default_services()
 
     def _register_default_services(self):
-        """注册默认服务"""
+        """注册默认服务：有啥服务就都注册了"""
         try:
             from mcp_for_db.server.server_mysql import MySQLMCPServer
             self.service_classes["mysql"] = MySQLMCPServer
         except ImportError:
+            MySQLMCPServer = None
             pass
 
         try:
@@ -44,7 +45,7 @@ class ServiceManager:
 
         # 创建新实例
         service_class = self.service_classes[service_name]
-        service = service_class(self.config_manager)
+        service = service_class(config_manager=self.config_manager)
         self.services[service_name] = service
 
         return service

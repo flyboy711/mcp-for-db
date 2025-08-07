@@ -4,7 +4,7 @@ from mcp import Tool
 from mcp.types import TextContent
 
 from mcp_for_db.server.common import ENHANCED_DESCRIPTIONS
-from mcp_for_db.server.common.base.base_tools import BaseHandler
+from mcp_for_db.server.common.base import BaseHandler
 from mcp_for_db.server.server_mysql.tools import ExecuteSQL
 from mcp_for_db.server.shared.utils import get_logger, configure_logger
 

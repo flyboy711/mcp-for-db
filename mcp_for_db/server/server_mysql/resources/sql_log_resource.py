@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 from typing import List, Dict
 from pydantic.networks import AnyUrl
 from mcp.types import Resource
-from mcp_for_db.server.common.base.base_resource import BaseResource, ResourceRegistry
+from mcp_for_db.server.common.base import BaseResource, ResourceRegistry
 from mcp_for_db.server.shared.utils import get_logger, configure_logger
 
 logger = get_logger(__name__)

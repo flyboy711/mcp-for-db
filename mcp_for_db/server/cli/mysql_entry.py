@@ -8,14 +8,8 @@ from mcp_for_db.server.core import ServiceManager
 @click.option("--host", default="0.0.0.0", help="主机地址")
 @click.option("--port", type=int, help="端口号（SSE默认9000，HTTP默认3000）")
 @click.option("--oauth", is_flag=True, help="启用OAuth认证")
-@click.option("--envfile", help="自定义环境配置文件")
-def main(mode, host, port, oauth, envfile):
+def main(mode, host, port, oauth):
     """MySQL MCP服务启动器"""
-
-    # 如果指定了环境文件，先加载它
-    if envfile:
-        from dotenv import load_dotenv
-        load_dotenv(envfile)
 
     service_manager = ServiceManager()
 

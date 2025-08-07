@@ -5,15 +5,15 @@ from typing import Dict, Any, Sequence
 from mcp import Tool
 from mcp.types import TextContent
 
-from mcp_for_db.server.server_dify.config import DiFyConfig
-from mcp_for_db.server.common.base.base_tools import BaseHandler
+from mcp_for_db.server.server_dify.config import get_current_session_config
+from mcp_for_db.server.common.base import BaseHandler
 from mcp_for_db.server.server_dify.tools.dify_knowledge import get_dify_tool
 from mcp_for_db.server.common import DBAPromptTemplate, DatabaseKnowledgeContext
 from mcp_for_db.server.shared.utils import get_logger, configure_logger
 
 logger = get_logger(__name__)
 configure_logger(log_filename="dify_knowledge.log")
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.WARNING)
 
 
 class RetrieveKnowledge(BaseHandler):
@@ -38,7 +38,7 @@ class RetrieveKnowledge(BaseHandler):
                     "dataset_id": {
                         "type": "string",
                         "description": "知识库ID，默认使用系统配置",
-                        "default": DiFyConfig().DIFY_DATASET_ID
+                        "default": get_current_session_config().server_config.get("DIFY_DATASET_ID")
                     },
                     "top_k": {
                         "type": "integer",
@@ -71,7 +71,7 @@ class RetrieveKnowledge(BaseHandler):
             if not user_query:
                 raise ValueError("查询内容不能为空")
 
-            dataset_id = arguments.get("dataset_id", DiFyConfig().DIFY_DATASET_ID)
+            dataset_id = arguments.get("dataset_id", get_current_session_config().server_config.get("DIFY_DATASET_ID"))
             top_k = min(arguments.get("top_k", 5), 10)  # 限制最大返回数量
             search_method = arguments.get("search_method", "auto")
             include_raw_results = arguments.get("include_raw_results", False)
