@@ -31,7 +31,7 @@ class BaseMCPServer(ABC):
         self.service_name = service_name
         self.config_manager = config_manager
         self.server_config = config_manager.get_service_config(service_name)
-        self.logger = get_logger(f"{service_name}_server")
+        self.logger = get_logger(f"mcp_server_{service_name}")
         self.resources_initialized = False
         self.server_setup_completed = False
         # 设置日志级别

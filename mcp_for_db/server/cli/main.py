@@ -5,6 +5,13 @@ import sys
 import time
 from datetime import datetime
 
+from mcp_for_db import LOG_LEVEL
+from mcp_for_db.server.shared.utils import get_logger, configure_logger
+
+logger = get_logger(__name__)
+configure_logger("mcp_server_cli.log")
+logger.setLevel(LOG_LEVEL)
+
 
 @click.command()
 @click.option("--mode", default="stdio", type=click.Choice(["stdio", "sse", "streamable_http"]), help="运行模式")
@@ -22,7 +29,7 @@ def main(mode, host, mysql_port, dify_port, oauth, services):
     processes = []
     python_executable = sys.executable
 
-    print(f"主参数: mode={mode}, host={host}, mysql_port={mysql_port}, dify_port={dify_port}, oauth={oauth}")
+    logger.info(f"主参数: mode={mode}, host={host}, mysql_port={mysql_port}, dify_port={dify_port}, oauth={oauth}")
 
     # 启动MySQL服务
     if "mysql" in services:
@@ -36,12 +43,12 @@ def main(mode, host, mysql_port, dify_port, oauth, services):
         if oauth:
             mysql_cmd.append("--oauth")
 
-        print(f"启动MySQL命令: {' '.join(mysql_cmd)}")
+        logger.info(f"启动MySQL命令: {' '.join(mysql_cmd)}")
         mysql_process = subprocess.Popen(mysql_cmd)
         processes.append(("MySQL", mysql_process))
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] MySQL服务已启动 (PID: {mysql_process.pid})")
+        logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] MySQL服务已启动 (PID: {mysql_process.pid})")
 
-    # 启动Dify服务
+    # 启动 Dify 服务
     if "dify" in services:
         dify_cmd = [
             python_executable, "-m", "mcp_for_db.server.cli.dify_cli",
@@ -53,24 +60,24 @@ def main(mode, host, mysql_port, dify_port, oauth, services):
         if oauth:
             dify_cmd.append("--oauth")
 
-        print(f"启动Dify命令: {' '.join(dify_cmd)}")
+        logger.info(f"启动Dify命令: {' '.join(dify_cmd)}")
         dify_process = subprocess.Popen(dify_cmd)
         processes.append(("Dify", dify_process))
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] Dify服务已启动 (PID: {dify_process.pid})")
+        logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] Dify服务已启动 (PID: {dify_process.pid})")
 
-    print(f"已启动 {len(processes)} 个服务，模式: {mode}")
-    print("按 Ctrl+C 停止所有服务")
+    logger.info(f"已启动 {len(processes)} 个服务，模式: {mode}")
+    logger.info("按 Ctrl+C 停止所有服务")
 
     def signal_handler(signum, frame):
-        print("\n收到中断信号，正在关闭服务...")
+        logger.info("\n收到中断信号，正在关闭服务...")
         for service_name, process in processes:
             if process.poll() is None:  # 进程还在运行
-                print(f"正在关闭 {service_name}服务 (PID: {process.pid})...")
+                logger.info(f"正在关闭 {service_name}服务 (PID: {process.pid})...")
                 process.terminate()
                 try:
                     process.wait(timeout=5)
                 except subprocess.TimeoutExpired:
-                    print(f"强制关闭 {service_name}服务...")
+                    logger.warning(f"强制关闭 {service_name}服务...")
                     process.kill()
         sys.exit(0)
 
@@ -87,16 +94,16 @@ def main(mode, host, mysql_port, dify_port, oauth, services):
                 if process.poll() is None:
                     running_count += 1
                 else:
-                    print(f"[{datetime.now().strftime('%H:%M:%S')}] {service_name}服务已停止")
+                    logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] {service_name}服务已停止")
 
             if running_count == 0:
-                print("所有服务已停止")
+                logger.info("所有服务已停止")
                 break
             else:
                 pass
 
     except KeyboardInterrupt:
-        print("\n收到中断信号，正在关闭...")
+        logger.info("\n收到中断信号，正在关闭...")
         signal_handler(signal.SIGINT, None)
 
 
