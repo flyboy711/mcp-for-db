@@ -1,11 +1,17 @@
 import os
+import sys
+
+# 强制设置UTF-8编码解决交互式中文编码问题
+os.environ['PYTHONIOENCODING'] = 'utf-8'
+sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+sys.stdin.reconfigure(encoding='utf-8', errors='replace')
+
 import json
 import asyncio
 from pathlib import Path
 from typing import Dict, List, Any
 from contextlib import AsyncExitStack
 from enum import Enum
-
 from mcp_for_db import LOG_LEVEL
 
 # 根据模型类型选择不同的客户端
@@ -23,7 +29,7 @@ from mcp.client.stdio import stdio_client
 from mcp_for_db.server.shared.utils import get_logger, configure_logger
 
 # 加载环境变量
-load_dotenv(os.path.join(Path(__file__).parent.parent.parent, ".env"))
+load_dotenv(os.path.join(Path(__file__).parent.parent, "envs", ".env"))
 
 
 class ModelProvider(Enum):
@@ -74,8 +80,8 @@ class MCPClient:
 
         # 默认服务器配置
         self.servers_config = servers_config or {
-            "MySQLServer": MCPClient.get_mysql_server_path(),
-            "DiFyServer": MCPClient.get_dify_server_path(),
+            "DiFyServer": "mcp_for_db.server.cli.dify_cli",
+            "MySQLServer": "mcp_for_db.server.cli.mysql_cli",
         }
 
         self._is_initialized = False
@@ -124,16 +130,6 @@ class MCPClient:
             self.logger.info(f"使用标准 OpenAI 接口: {self.model}")
 
         return OpenAI(**client_kwargs)
-
-    @staticmethod
-    def get_mysql_server_path() -> str:
-        """获取 MySQL 服务器脚本路径"""
-        return "mcp_for_db.server.cli.mysql_cli"
-
-    @staticmethod
-    def get_dify_server_path() -> str:
-        """获取 DiFy 服务器脚本路径"""
-        return "mcp_for_db.server.cli.dify_cli"
 
     async def initialize(self):
         """初始化所有 MCP 服务器连接"""
@@ -580,11 +576,10 @@ async def main():
     import argparse
     import sys
 
-    parser = argparse.ArgumentParser(description="MCP数据库客户端")
-    parser.add_argument("query", nargs="?", help="要执行的查询")
+    parser = argparse.ArgumentParser(description="MCP 数据库客户端")
+    parser.add_argument("--query", nargs="?", help="要执行的查询")
     parser.add_argument("--interactive", "-i", action="store_true", help="交互模式")
     parser.add_argument("--test", "-t", action="store_true", help="运行测试")
-    parser.add_argument("--config", help="配置文件路径")
 
     args = parser.parse_args()
 
@@ -601,14 +596,22 @@ async def main():
 
         if args.interactive or not args.query:
             # 交互模式
-            print("MCP数据库客户端 - 交互模式")
+            print("MCP 数据库客户端 - 交互模式")
             print("输入 'quit', 'exit' 或 'q' 退出")
             print("输入 'help' 查看可用工具")
             print("输入 'health' 查看系统状态")
 
             while True:
                 try:
-                    query = input("\n请输入您的问题: ").strip()
+                    # 安全输入处理
+                    try:
+                        query = input("\n请输入您的问题: ").strip()
+                        # 清理代理对字符
+                        query = ''.join(c for c in query if ord(c) < 0xD800 or ord(c) > 0xDFFF)
+                    except UnicodeError:
+                        print("输入编码错误，请重新输入")
+                        continue
+
                     if query.lower() in ['quit', 'exit', 'q']:
                         break
 
@@ -674,14 +677,8 @@ async def main():
 
 def cli_main():
     """启动入口"""
-    asyncio.run(main_test())
+    asyncio.run(main())
 
 
 if __name__ == "__main__":
-    import sys
-
-    # 如果有命令行参数，运行交互模式，否则运行测试
-    if len(sys.argv) > 1:
-        asyncio.run(main())
-    else:
-        cli_main()
+    cli_main()

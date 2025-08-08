@@ -7,7 +7,7 @@ from mcp_for_db.server.core import ConfigManager, BaseMCPServer
 class ServiceManager:
     """多 MCP 服务管理器"""
 
-    def __init__(self, config_dir: str = os.path.join(Path(__file__).parent.parent.parent.parent, "envs")):
+    def __init__(self, config_dir: str = os.path.join(Path(__file__).parent.parent.parent, "envs")):
         self.config_manager = ConfigManager(config_dir)
         self.services: Dict[str, BaseMCPServer] = {}
         self.service_classes: Dict[str, Type[BaseMCPServer]] = {}

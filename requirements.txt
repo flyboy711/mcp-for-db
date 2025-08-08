@@ -99,8 +99,6 @@ click==8.2.1
     # via
     #   typer
     #   uvicorn
-contextvars==2.4
-    # via mcp-for-db (pyproject.toml)
 cryptography==45.0.5
     # via
     #   mcp-for-db (pyproject.toml)
@@ -125,6 +123,8 @@ h11==0.16.0
     # via
     #   httpcore
     #   uvicorn
+hatchling==1.27.0
+    # via mcp-for-db (pyproject.toml)
 httpcore==1.0.9
     # via httpx
 httpx==0.28.1
@@ -141,8 +141,6 @@ idna==3.10
     #   httpx
     #   requests
     #   yarl
-immutables==0.21
-    # via contextvars
 jinja2==3.1.6
     # via mcp-for-db (pyproject.toml)
 jiter==0.10.0
@@ -157,7 +155,7 @@ markdown-it-py==3.0.0
     # via rich
 markupsafe==3.0.2
     # via jinja2
-mcp==1.11.0
+mcp==1.12.0
     # via mcp-for-db (pyproject.toml)
 mdurl==0.1.2
     # via markdown-it-py
@@ -173,6 +171,12 @@ numpy==2.3.2
     # via mcp-for-db (pyproject.toml)
 openai==1.99.1
     # via mcp-for-db (pyproject.toml)
+packaging==25.0
+    # via hatchling
+pathspec==0.12.1
+    # via hatchling
+pluggy==1.6.0
+    # via hatchling
 propcache==0.3.2
     # via
     #   aiohttp
@@ -247,6 +251,8 @@ starlette==0.47.1
     #   mcp
 tqdm==4.67.1
     # via openai
+trove-classifiers==2025.8.6.13
+    # via hatchling
 typer==0.16.0
     # via mcp
 typing-extensions==4.14.1

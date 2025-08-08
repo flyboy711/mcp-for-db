@@ -161,7 +161,7 @@ class EnvironmentLoader:
 
     def __init__(self, service_name: str = "mysql"):
         self.service_name = service_name
-        self.root_dir = Path(__file__).parent.parent.parent.parent.parent
+        self.root_dir = Path(__file__).parent.parent.parent.parent
 
     def load_env_files(self) -> None:
         """加载环境文件"""

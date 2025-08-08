@@ -27,7 +27,7 @@ class DiFySessionConfig:
             self.server_config = initial_config.copy()
         else:
             # 从环境变量加载
-            root_dir = Path(__file__).parent.parent.parent.parent.parent
+            root_dir = Path(__file__).parent.parent.parent.parent
             diFy_env_file = os.path.join(root_dir, "envs", "dify.env")
             load_dotenv(diFy_env_file, override=True)
             self.server_config["DIFY_BASE_URL"] = os.getenv('DIFY_BASE_URL')

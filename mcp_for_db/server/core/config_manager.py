@@ -44,7 +44,7 @@ class ConfigManager:
     环境变量的持久化修改也在这里维护
     """
 
-    def __init__(self, config_dir: str = os.path.join(Path(__file__).parent.parent.parent.parent, "envs")):
+    def __init__(self, config_dir: str = os.path.join(Path(__file__).parent.parent.parent, "envs")):
         self.config_dir = config_dir  # 其他服务的配置目录
         self.configs: Dict[str, Dict[str, Any]] = {}  # 不同服务的环境配置信息
         self.global_config: Dict[str, Any] = {}  # 全局配置: common.env
