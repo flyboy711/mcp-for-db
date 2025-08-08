@@ -3,18 +3,15 @@ import asyncio
 from mcp_for_db.server.server_mysql.config import SessionConfigManager, DatabaseManager
 from mcp_for_db.server.server_mysql.config.request_context import get_current_database_manager, RequestContext
 from mcp_for_db.server.server_mysql.tools import GetDatabaseTables, GetTableDesc, GetDatabaseInfo, GetTableStats, \
-    CheckTableConstraints, GetTableLock
+    CheckTableConstraints, GetTableLock, AnalyzeQueryPerformance
 
-from mcp_for_db.server.server_mysql.tools import GetDBHealthRunning, SwitchDatabase, ExecuteSQL, SmartTool, GetTableIndex
+from mcp_for_db.server.server_mysql.tools import GetDBHealthRunning, SwitchDatabase, ExecuteSQL, SmartTool, \
+    GetTableIndex
 
 
 async def main_tools():
     db_manager = get_current_database_manager()
     try:
-        getDBHealthRunning = GetDBHealthRunning()
-        ret = await getDBHealthRunning.run_tool({"table_name": "test_table"})
-        print(ret)
-
         checkTableConstraints = CheckTableConstraints()
         ret = await checkTableConstraints.run_tool({
             "table_name": "t_users",
@@ -134,9 +131,16 @@ async def main_exe_sql(num: int = 1):
 
 async def main_tools_err():
     try:
-        getTableLock = GetTableLock()
-        ret = await getTableLock.run_tool({"table_name": "t_users"})
+        # getTableLock = GetTableLock()
+        # ret = await getTableLock.run_tool({"table_name": "t_users"})
+        # print(ret)
+
+        getDBHealthRunning = GetDBHealthRunning()
+        ret = await getDBHealthRunning.run_tool({"table_name": "test_table"})
         print(ret)
+
+        # ret =await AnalyzeQueryPerformance().run_tool({"query": "SELECT * FROM t_users WHERE age > 25 AND age < 27"})
+        # print(ret)
     finally:
         await get_current_database_manager().close_pool()
 
@@ -219,9 +223,9 @@ async def main2():
 
     # 设置请求上下文
     async with RequestContext(session_config_1, db_manager_1):
-        await test_main_use_prompt_tools()
-        await main_exe_sql(1)
-        await main_tools()
+        # await test_main_use_prompt_tools()
+        # await main_exe_sql(1)
+        # await main_tools()
         await main_tools_err()
         # await main_switch_db(1)
 

@@ -60,7 +60,7 @@ class SQLParser:
             return self._process_single_statement(stmt, formatted_sql)
 
         except Exception as e:
-            logger.error(f"SQL解析错误: {str(e)}")
+            logger.warning(f"SQL解析错误: {str(e)}")
             return self._fallback_parse(sql_query)
 
     def analyze_security(self, parsed_result: Dict[str, Any]) -> Dict[str, Any]:
@@ -202,7 +202,7 @@ class SQLParser:
         }
 
     def _get_operation_type(self, stmt: sqlparse.sql.Statement) -> str:
-        """获取 SQL 操作类型（增强版）"""
+        """获取 SQL 操作类型"""
         # 获取语句类型
         stmt_type = stmt.get_type()
 
@@ -219,26 +219,36 @@ class SQLParser:
                 # 检查 SHOW 的具体类型
                 next_token = stmt.token_next(first_token, skip_ws=True, skip_cm=True)
                 if next_token:
+                    next_value = next_token.value.upper()
+
+                    # 处理 SHOW TABLES - 新增这部分
+                    if next_value == 'TABLES':
+                        return 'SHOW TABLES'
+
                     # 处理 SHOW FULL PROCESSLIST
-                    if next_token.value.upper() == 'FULL':
+                    elif next_value == 'FULL':
                         next_next = stmt.token_next(next_token, skip_ws=True, skip_cm=True)
                         if next_next and next_next.value.upper() == 'PROCESSLIST':
                             return 'SHOW PROCESSLIST'
 
                     # 处理 SHOW VARIABLES
-                    elif next_token.value.upper() == 'VARIABLES':
+                    elif next_value == 'VARIABLES':
                         return 'SHOW VARIABLES'
 
                     # 处理 SHOW ENGINE
-                    elif next_token.value.upper() == 'ENGINE':
+                    elif next_value == 'ENGINE':
                         next_next = stmt.token_next(next_token, skip_ws=True, skip_cm=True)
                         if next_next and next_next.value.upper() == 'INNODB':
                             next_next_next = stmt.token_next(next_next, skip_ws=True, skip_cm=True)
                             if next_next_next and next_next_next.value.upper() == 'STATUS':
                                 return 'SHOW ENGINE INNODB STATUS'
 
-                    # 默认返回 SHOW
-                    return 'SHOW'
+                    # 处理其他 SHOW 命令
+                    else:
+                        return f'SHOW {next_value}'
+
+                # 默认返回 SHOW
+                return 'SHOW'
 
             # 返回第一个关键字
             return token_value

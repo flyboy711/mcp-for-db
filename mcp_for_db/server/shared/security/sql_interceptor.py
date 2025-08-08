@@ -109,7 +109,7 @@ class SQLInterceptor:
 
         except SQLOperationException as e:
             # 记录异常并返回结果
-            logger.error(f"SQL操作被拒绝: {e.message}")
+            logger.warning(f"SQL操作被拒绝: {e.message}")
             result['violations'].append(e.message)
             if e.details:
                 result.update(e.details)
@@ -427,17 +427,17 @@ async def test_sql_interceptor():
         try:
             result = await interceptor.check_operation(sql)
             if result['is_allowed']:
-                logger.info("✅ SQL操作允许执行")
+                logger.info("SQL操作允许执行")
                 if not expected:
-                    logger.error("❌ 错误: 预期被拒绝的操作被允许了")
+                    logger.error("错误: 预期被拒绝的操作被允许了")
             else:
-                logger.warning(f"🚫 SQL操作被拒绝: {result['violations']}")
+                logger.warning(f"SQL操作被拒绝: {result['violations']}")
                 if expected:
-                    logger.error("❌ 错误: 预期允许的操作被拒绝了")
+                    logger.error("错误: 预期允许的操作被拒绝了")
                 else:
-                    logger.info("✅ 正确拒绝了危险操作")
+                    logger.info("正确拒绝了危险操作")
         except Exception as e:
-            logger.error(f"❌ 测试失败: {str(e)}")
+            logger.error(f"测试失败: {str(e)}")
 
         logger.info("-" * 50)
 

@@ -52,7 +52,7 @@ class QueryLimiter:
         try:
             parsed_sql = self.sql_parser.parse_query(sql_query)
         except Exception as e:
-            logger.error(f"SQL解析失败: {str(e)}")
+            logger.warning(f"SQL解析失败: {str(e)}")
             return False, "SQL解析失败，无法进行安全检查"
 
         # 分析安全风险 - 修改这个部分以避免类型错误
