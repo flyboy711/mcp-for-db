@@ -16,7 +16,7 @@ from mcp_for_db.server.shared.security.db_scope_check import DatabaseScopeChecke
 from mcp_for_db.server.shared.utils import get_logger, configure_logger
 
 logger = get_logger(__name__)
-configure_logger(log_filename="database.log")
+configure_logger(log_filename="mcp_database.log")
 logger.setLevel(LOG_LEVEL)
 
 

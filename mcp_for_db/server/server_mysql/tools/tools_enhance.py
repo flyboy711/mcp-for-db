@@ -8,7 +8,7 @@ from mcp_for_db.server.common.base import ToolSelector, BaseHandler, ToolRegistr
 from mcp_for_db.server.shared.utils import get_logger, configure_logger
 
 logger = get_logger(__name__)
-configure_logger(log_filename="sql_tools.log")
+configure_logger(log_filename="mcp_tools_mysql.log")
 logger.setLevel(LOG_LEVEL)
 
 

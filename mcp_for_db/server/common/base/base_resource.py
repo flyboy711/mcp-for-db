@@ -7,7 +7,7 @@ from mcp_for_db import LOG_LEVEL
 from mcp_for_db.server.shared.utils import configure_logger, get_logger
 
 logger = get_logger(__name__)
-configure_logger(log_filename="resources.log")
+configure_logger(log_filename="mcp_resources.log")
 logger.setLevel(LOG_LEVEL)
 
 

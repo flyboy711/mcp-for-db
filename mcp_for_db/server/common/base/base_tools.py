@@ -1,6 +1,13 @@
 from typing import Dict, Any, Sequence, Type, ClassVar, List
 from mcp.types import TextContent, Tool
+
+from mcp_for_db import LOG_LEVEL
 from mcp_for_db.server.common import ENHANCED_DESCRIPTIONS
+from mcp_for_db.server.shared.utils import get_logger, configure_logger
+
+logger = get_logger(__name__)
+configure_logger(log_filename="mcp_resources.log")
+logger.setLevel(LOG_LEVEL)
 
 
 class ToolCall:
@@ -30,6 +37,7 @@ class ToolRegistry:
         tool = tool_class()
         cls._tools[tool.name] = tool
 
+        logger.info(f"🔧正在注册工具： {tool.name}")
         # 自动应用增强描述（如果存在）
         if tool.name in ENHANCED_DESCRIPTIONS:
             tool.enhanced_description = ENHANCED_DESCRIPTIONS[tool.name]
@@ -39,8 +47,10 @@ class ToolRegistry:
     @classmethod
     def get_tool(cls, name: str) -> 'BaseHandler':
         """获取工具实例"""
+        logger.info(f"🔧正在请求工具 {name}")
         if name not in cls._tools:
             available_tools = ", ".join(cls._tools.keys())
+            logger.warning(f"正在请求的工具未知：{name}")
             raise ValueError(f"未知的工具: {name}，可用工具: {available_tools}")
         return cls._tools[name]
 
@@ -48,6 +58,7 @@ class ToolRegistry:
     def get_all_tools(cls) -> list[Tool]:
         """获取所有工具的描述（使用增强描述）"""
         tools = []
+        logger.info(f"当前请求的服务中一共有工具： {len(cls._tools.values())}")
         for tool in cls._tools.values():
             # 优先使用增强描述
             description = getattr(tool, 'enhanced_description', None) or tool.description

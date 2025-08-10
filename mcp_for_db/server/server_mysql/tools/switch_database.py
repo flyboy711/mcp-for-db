@@ -11,7 +11,7 @@ from mcp_for_db.server.shared.utils import get_logger, configure_logger
 from mcp_for_db.server.server_mysql.config import get_current_session_config, get_current_database_manager
 
 logger = get_logger(__name__)
-configure_logger(log_filename="sql_tools.log")
+configure_logger(log_filename="mcp_tools_mysql.log")
 logger.setLevel(LOG_LEVEL)
 
 

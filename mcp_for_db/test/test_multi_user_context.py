@@ -1,14 +1,6 @@
 import asyncio
 from typing import Dict, Any
-
-from mcp_for_db import LOG_LEVEL
 from mcp_for_db.server.server_mysql.config import SessionConfigManager, DatabaseManager, RequestContext
-from mcp_for_db.server.shared.utils import get_logger, configure_logger
-
-# 配置日志
-logger = get_logger(__name__)
-configure_logger(log_filename="resources.log")
-logger.setLevel(LOG_LEVEL)
 
 # 模拟用户配置
 USER_CONFIGS = {
@@ -31,7 +23,7 @@ USER_CONFIGS = {
 
 async def execute_user_query(user_id: str, config: Dict[str, Any]) -> Dict[str, Any]:
     """模拟用户执行查询操作"""
-    logger.info(f"用户 {user_id} 开始执行查询")
+    print(f"用户 {user_id} 开始执行查询")
 
     # 创建用户特定的会话配置
     session_config = SessionConfigManager(config)
@@ -64,7 +56,7 @@ async def execute_user_query(user_id: str, config: Dict[str, Any]) -> Dict[str, 
                 "status": "success"
             }
         except Exception as e:
-            logger.error(f"用户 {user_id} 查询失败: {str(e)}")
+            print(f"用户 {user_id} 查询失败: {str(e)}")
             return {
                 "user_id": user_id,
                 "error": str(e),
@@ -87,22 +79,22 @@ async def run_concurrent_users():
     results = await asyncio.gather(*tasks)
 
     # 输出结果
-    logger.info("\n=== 测试结果 ===")
+    print("\n=== 测试结果 ===")
     for result in results:
         if result['status'] == 'success':
-            logger.info(f"用户 {result['user_id']} 测试成功")
-            logger.info(f"  当前数据库: {result['current_database']}")
-            logger.info(f"  MySQL版本: {result['mysql_version']}")
-            logger.info(f"  数据库状态: {result['db_info']['status']}")
+            print(f"用户 {result['user_id']} 测试成功")
+            print(f"  当前数据库: {result['current_database']}")
+            print(f"  MySQL版本: {result['mysql_version']}")
+            print(f"  数据库状态: {result['db_info']['status']}")
         else:
-            logger.error(f"用户 {result['user_id']} 测试失败: {result['error']}")
+            print(f"用户 {result['user_id']} 测试失败: {result['error']}")
 
-    logger.info("=== 测试完成 ===")
+    print("=== 测试完成 ===")
 
 
 def test_multi_user_context():
     """测试多用户上下文隔离"""
-    logger.info("开始多用户上下文隔离测试")
+    print("开始多用户上下文隔离测试")
 
     # 创建事件循环
     loop = asyncio.get_event_loop()
@@ -111,11 +103,11 @@ def test_multi_user_context():
         # 运行并发测试
         loop.run_until_complete(run_concurrent_users())
     except Exception as e:
-        logger.error(f"测试失败: {str(e)}")
+        print(f"测试失败: {str(e)}")
     finally:
         # 关闭事件循环
         loop.close()
-        logger.info("事件循环已关闭")
+        print("事件循环已关闭")
 
 
 if __name__ == "__main__":

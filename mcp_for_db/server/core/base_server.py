@@ -36,7 +36,7 @@ class BaseMCPServer(ABC):
         self.server_setup_completed = False
         # 设置日志级别
         self.logger.setLevel(LOG_LEVEL)
-        configure_logger(log_filename=f"{service_name}_server.log")
+        configure_logger(log_filename=f"mcp_server_{service_name}.log")
 
     @abstractmethod
     async def initialize_resources(self):

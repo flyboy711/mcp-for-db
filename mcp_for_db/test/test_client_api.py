@@ -192,38 +192,6 @@ def test_conversation(conversation_id):
         return False
 
 
-def test_direct_tool_execution():
-    """直接工具执行测试"""
-    print_separator("直接工具执行测试")
-
-    try:
-        url = "http://localhost:8000/tools/execute"
-        data = {
-            "tool_name": "MySQLServer_show_databases",
-            "tool_args": {}
-        }
-
-        print(f"请求: {url}")
-        print(f"工具: {data['tool_name']}")
-
-        response = requests.post(url, json=data, timeout=20)
-        result = handle_response(response, "直接工具执行")
-
-        if result:
-            if result.get('success'):
-                print(f"工具执行成功")
-                print(f"结果: {str(result['result'])[:200]}...")
-                print(f"执行时间: {result.get('processing_time', 0):.3f}s")
-            else:
-                print(f"工具执行失败: {result.get('error', 'Unknown error')}")
-            return result.get('success', False)
-        return False
-
-    except Exception as e:
-        print(f"直接工具执行出错: {e}")
-        return False
-
-
 def test_conversation_management():
     """会话管理测试"""
     print_separator("会话管理测试")
@@ -275,10 +243,7 @@ def run_all_tests():
     # 4. 多轮对话
     results['conversation'] = test_conversation(conversation_id)
 
-    # 5. 直接工具执行
-    results['direct_tool'] = test_direct_tool_execution()
-
-    # 6. 会话管理
+    # 5. 会话管理
     results['conversation_mgmt'] = test_conversation_management()
 
     # 总结
@@ -295,7 +260,6 @@ def run_all_tests():
             'tools': '工具列表',
             'basic_query': '基本查询',
             'conversation': '多轮对话',
-            'direct_tool': '直接工具执行',
             'conversation_mgmt': '会话管理'
         }.get(test_name, test_name)
 

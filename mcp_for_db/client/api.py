@@ -518,39 +518,6 @@ async def delete_conversation(conversation_id: str):
     return {"message": f"会话 {conversation_id} 已删除", "timestamp": get_current_timestamp()}
 
 
-@app.post("/tools/execute")
-async def execute_tool_directly(
-        request: ToolExecutionRequest,
-        service: MCPClient = Depends(get_mcp_service)
-):
-    """直接执行指定工具"""
-    try:
-        logger.info(f"直接执行工具: {request.tool_name}")
-
-        start_time = time.time()
-        result = await service.call_mcp_tool(request.tool_name, request.tool_args)
-        processing_time = time.time() - start_time
-
-        return {
-            "success": True,
-            "tool_name": request.tool_name,
-            "arguments": request.tool_args,
-            "result": result,
-            "processing_time": round(processing_time, 3),
-            "timestamp": get_current_timestamp()
-        }
-
-    except Exception as e:
-        logger.error(f"执行工具失败: {e}")
-        return {
-            "success": False,
-            "tool_name": request.tool_name,
-            "arguments": request.tool_args,
-            "error": str(e),
-            "timestamp": get_current_timestamp()
-        }
-
-
 # 后台任务函数
 async def log_query_stats(
         conversation_id: str,

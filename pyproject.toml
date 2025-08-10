@@ -38,12 +38,13 @@ dependencies = [
 # 服务器和客户端脚本入口
 [project.scripts]
 # 服务端入口
-mcp_for_db = "mcp_for_db.server.cli.main:main"
+mcp_for_db = "mcp_for_db.server.cli.server:main"
 mcp_mysql = "mcp_for_db.server.cli.mysql_cli:mysql_main"
 mcp_dify = "mcp_for_db.server.cli.dify_cli:dify_main"
 # 客户端API入口
-mcp_api = "mcp_for_db.client.api:main"
 mcp_client = "mcp_for_db.client.client:cli_main"
+# FastAPI
+mcp_api = "mcp_for_db.client.api:main"
 
 [build-system]
 requires = ["hatchling"]

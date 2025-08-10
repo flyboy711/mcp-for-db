@@ -11,7 +11,7 @@ from mcp_for_db.server.shared.security.sql_analyzer import SQLRiskLevel
 from mcp_for_db.server.shared.utils import get_logger, configure_logger
 
 logger = get_logger(__name__)
-configure_logger(log_filename="sql_security.log")
+configure_logger(log_filename="mcp_sql_security.log")
 logger.setLevel(LOG_LEVEL)
 
 

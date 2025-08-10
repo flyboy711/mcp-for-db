@@ -11,7 +11,7 @@ from mcp_for_db.server.server_dify.tools.dify_knowledge import get_dify_tool
 from mcp_for_db.server.shared.utils import get_logger, configure_logger
 
 logger = get_logger(__name__)
-configure_logger(log_filename="dify_knowledge.log")
+configure_logger(log_filename="mcp_tools_dify_knowledge.log")
 logger.setLevel(LOG_LEVEL)
 
 

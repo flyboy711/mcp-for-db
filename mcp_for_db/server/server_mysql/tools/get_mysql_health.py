@@ -10,7 +10,7 @@ from mcp_for_db.server.common.base import BaseHandler
 from mcp_for_db.server.server_mysql.tools import ExecuteSQL
 
 logger = get_logger(__name__)
-configure_logger(log_filename="sql_tools.log")
+configure_logger(log_filename="mcp_tools_mysql.log")
 logger.setLevel(LOG_LEVEL)
 
 

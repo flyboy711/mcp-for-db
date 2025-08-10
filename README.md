@@ -86,15 +86,26 @@ uv pip install -r requirements.txt
 项目支持三种通信机制：stdio、sse、streamable_http，默认 stdio。
 
 我们在终端中启动 MCP 服务器：
+注意若采用 `stdio` 通信机制，需要设置环境变量：
 ```bash
+export MYSQL_HOST="localhost"
+export MYSQL_PORT="13308"
+export MYSQL_USER="videx"
+export MYSQL_PASSWORD="password"
+export MYSQL_DATABASE="tpch_tiny"
+export DIFY_BASE_URL="https://aistudio.dewu-inc.com/v1"
+export DIFY_API_KEY="dataset-2v5Y9RVF6YJtHNaog49RlZR7"
+export DIFY_DATASET_ID="03918555-2466-4a7d-b7cd-b30d973934eb"
+```
+```bash
+# 终端启动所有 mcp server
+python -m mcp_for_db.server.cli.server
+
 # 终端单独启动 mysql mcp server
 python -m mcp_for_db.server.cli.mysql_cli
 
 # 终端单独启动 dify mcp server
 python -m mcp_for_db.server.cli.dify_cli
-
-# 终端启动所有 mcp server
-python -m mcp_for_db.server.cli.main
 
 # 终端执行 FastAPI 服务
 python -m mcp_for_db.client.api
@@ -338,3 +349,11 @@ ORDER BY revenue DESC;
 ![](assets/195ed279.png)
 
 总结就是：目前权限限定为查询操作DQL。
+
+
+### 5.5 自建客户端提问
+```bash
+当前数据库基本信息，以及包含哪些表及表字段。
+```
+终端给出的效果：
+![](assets/db6a36a1.png)
