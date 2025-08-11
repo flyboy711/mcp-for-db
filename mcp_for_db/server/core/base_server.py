@@ -34,6 +34,7 @@ class BaseMCPServer(ABC):
         self.logger = get_logger(f"mcp_server_{service_name}")
         self.resources_initialized = False
         self.server_setup_completed = False
+
         # 设置日志级别
         self.logger.setLevel(LOG_LEVEL)
         configure_logger(log_filename=f"mcp_server_{service_name}.log")
@@ -226,7 +227,7 @@ class BaseMCPServer(ABC):
         self.server_setup_completed = True
         self.logger.info("服务器路由设置完成")
 
-    async def _initialize_global_resources(self):
+    async def initialize_global_resources(self):
         """全局资源初始化"""
         if self.resources_initialized:
             self.logger.info("资源已初始化，跳过初始化过程")
@@ -246,7 +247,7 @@ class BaseMCPServer(ABC):
             self.logger.exception(f"资源初始化失败:{e}")
             raise
 
-    async def _close_global_resources(self):
+    async def close_global_resources(self):
         """全局资源关闭"""
         if not self.resources_initialized:
             self.logger.info("资源尚未初始化，无需关闭")
@@ -268,7 +269,7 @@ class BaseMCPServer(ABC):
         self.logger.info("启动标准输入输出(stdio)模式服务器")
 
         try:
-            await self._initialize_global_resources()
+            await self.initialize_global_resources()
 
             async with stdio_server() as (read_stream, write_stream):
                 try:
@@ -288,7 +289,7 @@ class BaseMCPServer(ABC):
                     self.logger.critical(f"标准输入输出模式服务器错误: {str(e)}")
                     raise
         finally:
-            await self._close_global_resources()
+            await self.close_global_resources()
             await asyncio.sleep(0.5)
 
     def run_sse(self, host: str = "0.0.0.0", port: int = 9000):
@@ -317,10 +318,10 @@ class BaseMCPServer(ABC):
         @contextlib.asynccontextmanager
         async def lifespan(app: Starlette) -> AsyncIterator[None]:
             try:
-                await self._initialize_global_resources()
+                await self.initialize_global_resources()
                 yield
             finally:
-                await self._close_global_resources()
+                await self.close_global_resources()
                 await asyncio.sleep(0.5)
 
         starlette_app = Starlette(
@@ -381,12 +382,12 @@ class BaseMCPServer(ABC):
         @contextlib.asynccontextmanager
         async def lifespan(app: Starlette) -> AsyncIterator[None]:
             try:
-                await self._initialize_global_resources()
+                await self.initialize_global_resources()
                 async with session_manager.run():
                     self.logger.info("服务器初始化完成，开始接受请求")
                     yield
             finally:
-                await self._close_global_resources()
+                await self.close_global_resources()
                 self.logger.info("服务器关闭完成")
 
         routes = [Mount("/mcp", app=handle_streamable_http)]

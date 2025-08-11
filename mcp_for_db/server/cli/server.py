@@ -1,8 +1,8 @@
 import asyncio
+import contextlib
 import click
 import signal
-import os
-from datetime import datetime
+from typing import Dict, Any, List, Sequence
 
 from mcp_for_db import LOG_LEVEL
 from mcp_for_db.server.core import ServiceManager
@@ -15,163 +15,185 @@ logger.setLevel(LOG_LEVEL)
 
 
 class AggregatedMCPServer:
-    """聚合 MCP 服务器 - 在一个服务中集成多个子服务"""
+    """聚合 MCP 服务：在一个服务中集成多个子服务，因为 stdio 机制是进程间通信，想通过一个项目启动多个服务目前采用聚合方式"""
 
     def __init__(self, enabled_services):
         self.enabled_services = enabled_services
         self.sub_servers = {}
         self.logger = logger
+        self.aggregated_server = None
 
+    ##################################################################################################################
+    ##################################################################################################################
     async def initialize_all_services(self):
         """初始化所有启用的子服务"""
-        service_manager = ServiceManager()
+        service_manager = ServiceManager()  # 初始化服务管理器时，用户定义的环境变量已经被分发到系统 envs 目录下
 
         for service_name in self.enabled_services:
             try:
                 self.logger.info(f"初始化子服务: {service_name}")
                 sub_server = service_manager.create_service(service_name)
 
-                # 初始化子服务的资源，但不启动stdio
-                await sub_server._initialize_global_resources()
-                self.sub_servers[service_name] = sub_server
+                # 执行完整的初始化流程
+                await self._initialize_sub_server_complete(sub_server, service_name)
 
+                self.sub_servers[service_name] = sub_server
+                logger.info(f"当前子服务的信息: {self.sub_servers[service_name]}")
                 self.logger.info(f"子服务 {service_name} 初始化完成")
+
             except Exception as e:
-                self.logger.error(f"初始化子服务 {service_name} 失败: {e}")
+                self.logger.warning(f"初始化子服务 {service_name} 失败: {e}")
+                import traceback
+                self.logger.debug(f"详细错误: {traceback.format_exc()}")
                 raise
 
-    def create_aggregated_server(self):
-        """创建聚合的 MCP 服务器"""
+    async def _initialize_sub_server_complete(self, sub_server, service_name):
+        """完整初始化子服务: 按照 BaseMCPServer 的标准流程"""
+        try:
+            # 使用 BaseMCPServer 的标准初始化方法
+            if hasattr(sub_server, 'initialize_global_resources'):
+                await sub_server.initialize_global_resources()
+            else:
+                self.logger.warning(f"子服务 {service_name} 没有标准的 initialize_global_resources 方法")
+                if hasattr(sub_server, 'initialize_resources'):
+                    await sub_server.initialize_resources()
+
+            # 特定服务的额外初始化
+            if service_name == "mysql":
+                await self._ensure_mysql_initialization(sub_server)
+            elif service_name == "dify":
+                await self._ensure_dify_initialization(sub_server)
+
+        except Exception as e:
+            self.logger.error(f"完整初始化子服务 {service_name} 失败: {e}")
+            raise
+
+    async def _ensure_mysql_initialization(self, sub_server):
+        """确保 MySQL 服务正确初始化"""
+        try:
+            await self._initialize_mysql_config(sub_server)
+            self.logger.info("MySQL 管理器初始化完成")
+        except Exception as e:
+            self.logger.error(f"MySQL 管理器初始化失败: {e}")
+            raise
+
+    async def _initialize_mysql_config(self, sub_server):
+        """初始化 MySQL 管理器"""
+        try:
+            if not hasattr(sub_server, 'session_config_manager') or sub_server.session_config_manager is None:
+                from mcp_for_db.server.server_mysql.config import SessionConfigManager
+                sub_server.session_config_manager = SessionConfigManager()
+                self.logger.debug("创建 MySQL SessionConfigManager")
+
+            if not hasattr(sub_server, 'database_manager') or sub_server.database_manager is None:
+                from mcp_for_db.server.server_mysql.config import DatabaseManager
+                sub_server.database_manager = DatabaseManager(sub_server.session_config_manager.server_config)
+                self.logger.debug("创建 MySQL DatabaseManager")
+
+        except Exception as e:
+            self.logger.error(f"初始化 MySQL 管理器失败: {e}")
+            raise
+
+    async def _ensure_dify_initialization(self, sub_server):
+        """确保 DiFy 服务正确初始化"""
+        try:
+            await self._initialize_dify_config(sub_server)
+            self.logger.info("DiFy 配置初始化完成")
+        except Exception as e:
+            self.logger.error(f"DiFy 配置初始化失败: {e}")
+            raise
+
+    async def _initialize_dify_config(self, sub_server):
+        """初始化 DiFy 配置"""
+        try:
+            if not hasattr(sub_server, 'session_config') or sub_server.session_config is None:
+                from mcp_for_db.server.server_dify.config import DiFySessionConfig
+                sub_server.session_config = DiFySessionConfig()
+                self.logger.debug("创建 DiFy SessionConfig")
+
+        except Exception as e:
+            self.logger.error(f"初始化 DiFy 配置失败: {e}")
+            raise
+
+    ##################################################################################################################
+    ##################################################################################################################
+    async def _create_service_context(self, service_name, sub_server):
+        """为特定服务创建正确的请求上下文"""
+        try:
+            # 根据服务类型创建对应的上下文
+            if service_name == "mysql":
+                return await self._create_mysql_context(sub_server)
+
+            if service_name == "dify":
+                return await self._create_dify_context(sub_server)
+
+        except Exception as e:
+            self.logger.error(f"创建服务 {service_name} 的请求上下文失败: {e}")
+            raise
+
+    async def _create_mysql_context(self, sub_server):
+        """创建 MySQL 服务的专用上下文"""
+        try:
+            # 确保必要的管理器已初始化
+            if not hasattr(sub_server, 'session_config_manager') or sub_server.session_config_manager is None:
+                self.logger.warning("MySQL session_config_manager 未初始化，尝试创建...")
+                await self._initialize_mysql_config(sub_server)
+
+            if not hasattr(sub_server, 'database_manager') or sub_server.database_manager is None:
+                self.logger.warning("MySQL database_manager 未初始化，尝试创建...")
+                await self._initialize_mysql_config(sub_server)
+
+            # 检查子服务是否有 create_request_context 方法
+            if hasattr(sub_server, 'create_request_context'):
+                context = await sub_server.create_request_context()
+                self.logger.debug(f"使用子服务的 create_request_context 创建 MySQL 上下文: {type(context)}")
+                return context
+
+        except Exception as e:
+            self.logger.warning(f"创建 MySQL 上下文失败: {e}")
+            import traceback
+            self.logger.debug(f"详细错误: {traceback.format_exc()}")
+            raise
+
+    async def _create_dify_context(self, sub_server):
+        """创建 DiFy 服务的专用上下文"""
+        try:
+            # 确保会话配置已初始化
+            if not hasattr(sub_server, 'session_config') or sub_server.session_config is None:
+                self.logger.warning("DiFy session_config 未初始化，尝试创建...")
+                await self._initialize_dify_config(sub_server)
+
+            # 检查子服务是否有 create_request_context 方法
+            if hasattr(sub_server, 'create_request_context'):
+                context = await sub_server.create_request_context()
+                self.logger.debug(f"使用子服务的 create_request_context 创建 DiFy 上下文: {type(context)}")
+                return context
+
+        except Exception as e:
+            self.logger.warning(f"创建 DiFy 上下文失败: {e}")
+            import traceback
+            self.logger.debug(f"详细错误: {traceback.format_exc()}")
+            raise
+
+    ##################################################################################################################
+    ##################################################################################################################
+    async def create_aggregated_server(self):
+        """创建聚合服务器，整合所有子服务的功能"""
         from mcp.server.lowlevel import Server
-        from mcp.types import Tool, Prompt, Resource, TextContent, GetPromptResult
-        from typing import Dict, Any, List, Sequence
+        from mcp.types import Tool, TextContent, Prompt, GetPromptResult, Resource
         from pydantic.networks import AnyUrl
 
-        # 创建聚合服务器
-        aggregated_server = Server("mcp-aggregated")
+        # 创建聚合服务器:将多个继承自 BaseMCPServer 的服务视为子服务聚合起来单独提供：受限于公司部署到MCP市场才这么设计
+        self.aggregated_server = Server("mcp-aggregated-server")
 
-        @aggregated_server.list_tools()
-        async def list_all_tools() -> List[Tool]:
-            """聚合所有子服务的工具"""
-            all_tools = []
-
-            for service_name, sub_server in self.sub_servers.items():
-                try:
-                    tool_registry = sub_server.get_tool_registry()
-                    if tool_registry and hasattr(tool_registry, 'get_all_tools'):
-                        if asyncio.iscoroutinefunction(tool_registry.get_all_tools):
-                            tools = await tool_registry.get_all_tools()
-                        else:
-                            tools = tool_registry.get_all_tools()
-
-                        # 为工具名称添加服务前缀以避免冲突
-                        for tool in tools:
-                            tool.name = f"{service_name}_{tool.name}"
-                            all_tools.append(tool)
-
-                        self.logger.debug(f"从 {service_name} 获取到 {len(tools)} 个工具")
-
-                except Exception as e:
-                    self.logger.warning(f"获取 {service_name} 工具失败: {e}")
-
-            self.logger.info(f"聚合服务器总共提供 {len(all_tools)} 个工具")
-            return all_tools
-
-        @aggregated_server.call_tool()
-        async def call_aggregated_tool(name: str, arguments: Dict[str, Any]) -> Sequence[TextContent]:
-            """调用聚合工具"""
-            # 解析服务名称和工具名称
-            if '_' in name:
-                service_name, tool_name = name.split('_', 1)
-            else:
-                # 如果没有前缀，尝试在所有服务中查找
-                service_name = None
-                tool_name = name
-                for svc_name, sub_server in self.sub_servers.items():
-                    try:
-                        tool_registry = sub_server.get_tool_registry()
-                        if tool_registry and hasattr(tool_registry, 'get_tool'):
-                            if asyncio.iscoroutinefunction(tool_registry.get_tool):
-                                tool = await tool_registry.get_tool(tool_name)
-                            else:
-                                tool = tool_registry.get_tool(tool_name)
-                            if tool:
-                                service_name = svc_name
-                                break
-                    except:
-                        continue
-
-            if not service_name or service_name not in self.sub_servers:
-                raise ValueError(f"找不到工具所属的服务: {name}")
-
-            # 调用对应子服务的工具
-            sub_server = self.sub_servers[service_name]
-            tool_registry = sub_server.get_tool_registry()
-
-            if asyncio.iscoroutinefunction(tool_registry.get_tool):
-                tool = await tool_registry.get_tool(tool_name)
-            else:
-                tool = tool_registry.get_tool(tool_name)
-
-            self.logger.info(f"调用 {service_name} 服务的工具: {tool_name}")
-            return await tool.run_tool(arguments)
-
-        @aggregated_server.list_prompts()
-        async def list_all_prompts() -> List[Prompt]:
-            """聚合所有子服务的提示词"""
-            all_prompts = []
-
-            for service_name, sub_server in self.sub_servers.items():
-                try:
-                    prompt_registry = sub_server.get_prompt_registry()
-                    if prompt_registry and hasattr(prompt_registry, 'get_all_prompts'):
-                        if asyncio.iscoroutinefunction(prompt_registry.get_all_prompts):
-                            prompts = await prompt_registry.get_all_prompts()
-                        else:
-                            prompts = prompt_registry.get_all_prompts()
-
-                        # 为提示词名称添加服务前缀
-                        for prompt in prompts:
-                            prompt.name = f"{service_name}_{prompt.name}"
-                            all_prompts.append(prompt)
-
-                        self.logger.debug(f"从 {service_name} 获取到 {len(prompts)} 个提示词")
-
-                except Exception as e:
-                    self.logger.warning(f"获取 {service_name} 提示词失败: {e}")
-
-            return all_prompts
-
-        @aggregated_server.get_prompt()
-        async def get_aggregated_prompt(name: str, arguments: Dict[str, Any] | None) -> GetPromptResult:
-            """获取聚合提示词"""
-            # 解析服务名称和提示词名称
-            if '_' in name:
-                service_name, prompt_name = name.split('_', 1)
-            else:
-                raise ValueError(f"提示词名称必须包含服务前缀: {name}")
-
-            if service_name not in self.sub_servers:
-                raise ValueError(f"找不到提示词所属的服务: {service_name}")
-
-            # 调用对应子服务的提示词
-            sub_server = self.sub_servers[service_name]
-            prompt_registry = sub_server.get_prompt_registry()
-
-            if asyncio.iscoroutinefunction(prompt_registry.get_prompt):
-                prompt = await prompt_registry.get_prompt(prompt_name)
-            else:
-                prompt = prompt_registry.get_prompt(prompt_name)
-
-            return await prompt.run_prompt(arguments)
-
-        @aggregated_server.list_resources()
-        async def list_all_resources() -> List[Resource]:
-            """聚合所有子服务的资源"""
+        # 注册资源处理器
+        @self.aggregated_server.list_resources()
+        async def handle_list_resources() -> List[Resource]:
             all_resources = []
-
             for service_name, sub_server in self.sub_servers.items():
                 try:
+                    # context = await self._create_service_context(service_name, sub_server)
+                    # async with context:
                     resource_registry = sub_server.get_resource_registry()
                     if resource_registry and hasattr(resource_registry, 'get_all_resources'):
                         if asyncio.iscoroutinefunction(resource_registry.get_all_resources):
@@ -179,237 +201,332 @@ class AggregatedMCPServer:
                         else:
                             resources = resource_registry.get_all_resources()
 
+                        # 为资源添加服务前缀
+                        for resource in resources:
+                            original_name = resource.name
+                            resource.name = f"{service_name}:{original_name}"
+                            # 也更新URI以包含服务前缀
+                            if hasattr(resource, 'uri'):
+                                resource.uri = f"{service_name}:{resource.uri}"
                         all_resources.extend(resources)
-                        self.logger.debug(f"从 {service_name} 获取到 {len(resources)} 个资源")
 
                 except Exception as e:
-                    self.logger.warning(f"获取 {service_name} 资源失败: {e}")
-
+                    self.logger.error(f"获取服务 {service_name} 的资源失败: {e}")
             return all_resources
 
-        @aggregated_server.read_resource()
-        async def read_aggregated_resource(uri: AnyUrl) -> str:
-            """读取聚合资源"""
-            # 尝试从所有子服务中读取资源
-            for service_name, sub_server in self.sub_servers.items():
-                try:
+        @self.aggregated_server.read_resource()
+        async def handle_read_resource(uri: AnyUrl) -> str:
+            uri_str = str(uri)
+            if ':' in uri_str:
+                service_name, actual_uri = uri_str.split(':', 1)
+                if service_name in self.sub_servers:
+                    sub_server = self.sub_servers[service_name]
+                    # context = await self._create_service_context(service_name, sub_server)
+                    # async with context:
                     resource_registry = sub_server.get_resource_registry()
                     if resource_registry and hasattr(resource_registry, 'get_resource'):
                         if asyncio.iscoroutinefunction(resource_registry.get_resource):
-                            content = await resource_registry.get_resource(uri)
+                            return await resource_registry.get_resource(AnyUrl(actual_uri))
                         else:
-                            content = resource_registry.get_resource(uri)
+                            return resource_registry.get_resource(AnyUrl(actual_uri))
 
-                        if content is not None:
-                            return content
+            raise ValueError(f"未找到资源: {uri}")
+
+        # 注册提示词处理器
+        @self.aggregated_server.list_prompts()
+        async def handle_list_prompts() -> List[Prompt]:
+            all_prompts = []
+            for service_name, sub_server in self.sub_servers.items():
+                try:
+                    # context = await self._create_service_context(service_name, sub_server)
+                    # async with context:
+                    prompt_registry = sub_server.get_prompt_registry()
+                    if prompt_registry and hasattr(prompt_registry, 'get_all_prompts'):
+                        if asyncio.iscoroutinefunction(prompt_registry.get_all_prompts):
+                            prompts = await prompt_registry.get_all_prompts()
+                        else:
+                            prompts = prompt_registry.get_all_prompts()
+
+                        # 为提示词添加服务前缀
+                        for prompt in prompts:
+                            prompt.name = f"{service_name}:{prompt.name}"
+                        all_prompts.extend(prompts)
 
                 except Exception as e:
-                    self.logger.debug(f"从 {service_name} 读取资源失败: {e}")
-                    continue
+                    self.logger.error(f"获取服务 {service_name} 的提示词失败: {e}")
+            return all_prompts
 
-            raise ValueError(f"找不到资源: {uri}")
+        @self.aggregated_server.get_prompt()
+        async def handle_get_prompt(name: str, arguments: Dict[str, Any] | None) -> GetPromptResult:
+            if ':' in name:
+                service_name, actual_name = name.split(':', 1)
+                if service_name in self.sub_servers:
+                    sub_server = self.sub_servers[service_name]
+                    # context = await self._create_service_context(service_name, sub_server)
+                    # async with context:
+                    prompt_registry = sub_server.get_prompt_registry()
+                    if prompt_registry and hasattr(prompt_registry, 'get_prompt'):
+                        if asyncio.iscoroutinefunction(prompt_registry.get_prompt):
+                            prompt = await prompt_registry.get_prompt(actual_name)
+                        else:
+                            prompt = prompt_registry.get_prompt(actual_name)
+                        return await prompt.run_prompt(arguments)
 
-        return aggregated_server
+            raise ValueError(f"未找到提示词: {name}")
 
+        # 注册工具处理器
+        @self.aggregated_server.list_tools()
+        async def list_tools() -> List[Tool]:
+            all_tools = []
+            registered_tools = {}  # 用于存储已经注册的工具
+
+            for service_name, sub_server in self.sub_servers.items():
+                try:
+                    self.logger.debug(f"获取服务 {service_name} 的工具列表")
+                    tool_registry = sub_server.get_tool_registry()
+
+                    if tool_registry is None:
+                        self.logger.warning(f"服务 {service_name} 的工具注册表为空")
+                        continue
+
+                    if hasattr(tool_registry, 'get_all_tools'):
+                        if asyncio.iscoroutinefunction(tool_registry.get_all_tools):
+                            tools = await tool_registry.get_all_tools()
+                        else:
+                            tools = tool_registry.get_all_tools()
+
+                        self.logger.debug(f"服务 {service_name} 获取到 {len(tools)} 个工具")
+
+                        for tool in tools:
+                            prefixed_name = f"{service_name}:{tool.name}"
+                            if prefixed_name not in registered_tools:
+                                # 创建新的工具对象，避免修改原对象
+                                from mcp.types import Tool as MCPTool
+                                prefixed_tool = MCPTool(
+                                    name=prefixed_name,
+                                    description=tool.description,
+                                    inputSchema=tool.inputSchema
+                                )
+                                all_tools.append(prefixed_tool)
+
+                                registered_tools[prefixed_name] = {
+                                    'service': service_name,
+                                    'original_name': tool.name
+                                }
+                                self.logger.debug(f"注册工具: {tool.name}")
+                    else:
+                        self.logger.warning(f"服务 {service_name} 的注册表没有 get_all_tools 方法")
+
+                except Exception as e:
+                    self.logger.error(f"获取服务 {service_name} 的工具失败: {e}")
+                    import traceback
+                    self.logger.debug(f"详细错误: {traceback.format_exc()}")
+
+            self.logger.info(f"总共注册了 {len(all_tools)} 个工具")
+            return all_tools
+
+        @self.aggregated_server.call_tool()
+        async def call_tool(name: str, arguments: Dict[str, Any]) -> Sequence[TextContent]:
+            self.logger.info(f"调用工具: {name}")
+            self.logger.debug(f"工具参数: {arguments}")
+
+            # 解析服务名称和工具名称
+            if ':' in name:
+                service_name, actual_name = name.split(':', 1)
+                self.logger.debug(f"解析工具调用: 服务={service_name}, 工具={actual_name}")
+
+                if service_name in self.sub_servers:
+                    sub_server = self.sub_servers[service_name]
+
+                    try:
+                        # 创建服务上下文
+                        # context = await self._create_service_context(service_name, sub_server)
+                        # async with context:
+                        tool_registry = sub_server.get_tool_registry()
+
+                        if tool_registry is None:
+                            raise ValueError(f"服务 {service_name} 的工具注册表未初始化")
+
+                        self.logger.debug(f"工具注册表类型: {type(tool_registry)}")
+
+                        if hasattr(tool_registry, 'get_tool'):
+                            if asyncio.iscoroutinefunction(tool_registry.get_tool):
+                                tool = await tool_registry.get_tool(actual_name)
+                            else:
+                                tool = tool_registry.get_tool(actual_name)
+
+                            if tool is None:
+                                raise ValueError(f"在服务 {service_name} 中未找到工具: {actual_name}")
+
+                            self.logger.debug(f"找到工具: {actual_name}, 类型: {type(tool)}")
+
+                            # 执行工具
+                            result = await tool.run_tool(arguments)
+                            self.logger.info(f"工具 {name} 执行成功，返回 {len(result) if result else 0} 个结果")
+                            return result
+                        else:
+                            raise ValueError(f"服务 {service_name} 的注册表没有 get_tool 方法")
+
+                    except Exception as e:
+                        self.logger.error(f"执行工具 {name} 失败: {e}")
+                        import traceback
+                        self.logger.debug(f"详细错误: {traceback.format_exc()}")
+                        # 返回错误信息而不是抛出异常
+                        return [TextContent(
+                            type="text",
+                            text=f"执行工具 {name} 时发生错误: {str(e)}"
+                        )]
+                else:
+                    error_msg = f"未找到服务: {service_name}，可用服务: {list(self.sub_servers.keys())}"
+                    self.logger.error(error_msg)
+                    return [TextContent(type="text", text=error_msg)]
+            else:
+                error_msg = f"在所有服务中都未找到工具: {name}"
+                self.logger.error(error_msg)
+                return [TextContent(type="text", text=error_msg)]
+
+    ##################################################################################################################
+    ##################################################################################################################
     async def run_stdio(self):
-        """运行聚合服务器的stdio模式"""
+        """运行标准输入输出模式的聚合服务器"""
         from mcp.server.stdio import stdio_server
 
-        aggregated_server = self.create_aggregated_server()
-
-        self.logger.info("启动聚合MCP服务器 (stdio模式)")
+        self.logger.info("启动聚合服务器 stdio 模式")
 
         try:
-            async with stdio_server() as (read_stream, write_stream):
-                await aggregated_server.run(
-                    read_stream,
-                    write_stream,
-                    aggregated_server.create_initialization_options()
-                )
+            # 初始化所有子服务
+            await self.initialize_all_services()
+
+            # 创建聚合服务器
+            await self.create_aggregated_server()
+
+            # 为所有子服务创建全局上下文：字典形式：服务名：服务所需上下文
+            contexts = {}
+            for service_name, sub_server in self.sub_servers.items():
+                try:
+                    context = await self._create_service_context(service_name, sub_server)
+                    contexts[service_name] = context
+                    self.logger.info(f"为服务 {service_name} 创建全局上下文成功")
+                except Exception as e:
+                    self.logger.error(f"为服务 {service_name} 创建全局上下文失败: {e}")
+                    contexts[service_name] = None
+
+            # 在所有上下文中运行聚合服务器
+            async with self._manage_all_contexts(contexts):
+                async with stdio_server() as (read_stream, write_stream):
+                    await self.aggregated_server.run(
+                        read_stream,
+                        write_stream,
+                        self.aggregated_server.create_initialization_options()
+                    )
+
+        except Exception as e:
+            self.logger.error(f"运行聚合服务器失败: {e}")
+            raise
         finally:
             await self.cleanup_all_services()
+
+    @contextlib.asynccontextmanager
+    async def _manage_all_contexts(self, contexts):
+        """管理所有服务的上下文"""
+        entered_contexts = []
+        try:
+            # 进入所有上下文
+            for service_name, context in contexts.items():
+                if context is not None:
+                    try:
+                        await context.__aenter__()
+                        entered_contexts.append((service_name, context))
+                        self.logger.debug(f"服务 {service_name} 上下文已激活")
+                    except Exception as e:
+                        self.logger.error(f"激活服务 {service_name} 上下文失败: {e}")
+
+            yield
+
+        finally:
+            # 退出所有上下文
+            for service_name, context in reversed(entered_contexts):
+                try:
+                    await context.__aexit__(None, None, None)
+                    self.logger.debug(f"服务 {service_name} 上下文已关闭")
+                except Exception as e:
+                    self.logger.error(f"关闭服务 {service_name} 上下文失败: {e}")
 
     async def cleanup_all_services(self):
         """清理所有子服务"""
         for service_name, sub_server in self.sub_servers.items():
             try:
-                await sub_server._close_global_resources()
-                self.logger.info(f"子服务 {service_name} 清理完成")
+                self.logger.info(f"清理子服务: {service_name}")
+                if hasattr(sub_server, 'close_global_resources'):
+                    await sub_server.close_global_resources()
+                elif hasattr(sub_server, 'close_resources'):
+                    await sub_server.close_resources()
             except Exception as e:
                 self.logger.error(f"清理子服务 {service_name} 失败: {e}")
 
-
-def mcp_server_main(mode, host, server_type, port, oauth):
-    """服务启动"""
-    service_manager = ServiceManager()
-
-    try:
-        service = service_manager.create_service(server_type)
-
-        if mode == "stdio":
-            asyncio.run(service.run_stdio())
-        elif mode == "sse":
-            service.run_sse(host, port)
-        elif mode == "streamable_http":
-            service.run_streamable_http(host, port, oauth=oauth)
-
-    except Exception:
-        raise
+        self.sub_servers.clear()
+        self.logger.info("所有子服务清理完成")
 
 
 @click.command()
-@click.option("--mode", default="stdio", type=click.Choice(["stdio", "sse", "streamable_http"]), help="运行模式")
-@click.option("--host", default="0.0.0.0", help="主机地址")
-@click.option("--mysql_port", type=int, default=3000, help="MySQL服务端口号")
-@click.option("--dify_port", type=int, default=3001, help="Dify服务端口号")
-@click.option("--oauth", is_flag=False, help="启用OAuth认证")
-@click.option("--services", multiple=True, type=click.Choice(["mysql", "dify"]),
-              help="要启动的服务，可多选（默认启动所有）")
-@click.option("--aggregated", is_flag=True, help="使用聚合模式（stdio下推荐）")
-def main(mode, host, mysql_port, dify_port, oauth, services, aggregated):
-    # 如果没有指定服务，则启动所有服务
-    if not services:
-        services = ["mysql", "dify"]
+@click.option("--mode", type=click.Choice(["stdio", "sse"]), default="stdio", help="传输协议")
+@click.option("--services", default="mysql,dify", help="启用的服务列表，逗号分隔")
+def main(mode, services):
+    """MCP 服务:支持多服务聚合模式"""
 
-    # stdio模式且启用聚合模式
-    if mode == "stdio" and (aggregated or len(services) > 1):
-        logger.info("使用聚合模式启动多个MCP服务")
-        # 环境变量分发
-        logger.info("stdio 模式启动，开始分发环境变量...")
-        env_distributor = EnvDistributor()
-        validation_result = env_distributor.validate_stdio_config(enabled_services=list(services))
+    # 解析启用的服务
+    enabled_services = [s.strip() for s in services.split(",") if s.strip()]
 
-        if not all(validation_result.values()):
-            invalid_services = [service for service, valid in validation_result.items() if not valid]
-            logger.error(f"以下服务配置无效: {invalid_services}")
-            logger.error("请检查环境变量配置后重试")
-            raise SystemExit(1)
+    async def run_aggregated():
+        """运行聚合服务器"""
+        try:
+            # 初始化环境变量分发器
+            logger.info("使用聚合模式启动多个 MCP 服务")
+            if mode == "stdio":
+                logger.info("stdio 模式启动，开始分发环境变量...")
 
-        logger.info("所有启动服务配置验证通过")
-        env_distributor.distribute_env_vars(list(services))
+                # 分发环境变量
+                env_distributor = EnvDistributor()
+                logger.info(f"验证 {len(enabled_services)} 个启动服务的配置: {enabled_services}")
 
-        # 启动聚合服务器
-        aggregated_server = AggregatedMCPServer(list(services))
+                if not env_distributor.validate_stdio_config(enabled_services):
+                    logger.error("服务配置验证失败")
+                    return
 
-        async def run_aggregated():
-            try:
-                await aggregated_server.initialize_all_services()
+                logger.info("所有启动服务配置验证通过")
+                env_distributor.distribute_env_vars(enabled_services)
+
+            # 创建聚合服务器
+            aggregated_server = AggregatedMCPServer(enabled_services)
+
+            # 根据传输模式运行
+            if mode == "stdio":
                 await aggregated_server.run_stdio()
-            except KeyboardInterrupt:
-                logger.info("接收到中断信号，正在关闭聚合服务器...")
-            except Exception as e:
-                logger.error(f"聚合服务器运行错误: {e}")
-                raise
+            else:
+                logger.error(f"聚合模式暂不支持 {mode} 传输协议")
 
-        asyncio.run(run_aggregated())
-        return
+        except Exception as exception:
+            logger.error(f"聚合服务器运行错误: {exception}")
+            import traceback
+            logger.debug(f"详细错误: {traceback.format_exc()}")
+            raise
 
-    # 原有的单服务逻辑
-    if mode == "stdio":
-        if len(services) > 1:
-            logger.warning("stdio模式下启动多个服务，建议使用 --aggregated 选项")
-            services = [services[0]]  # 只启动第一个服务
-            logger.info(f"stdio模式：只启动服务 {services[0]}")
-
-        logger.info(f"{os.environ.get('MYSQL_HOST')}:{os.environ.get('MYSQL_PORT')}")
-        logger.info("stdio 模式启动，开始分发环境变量...")
-
-        env_distributor = EnvDistributor()
-        validation_result = env_distributor.validate_stdio_config(enabled_services=list(services))
-
-        if not all(validation_result.values()):
-            invalid_services = [service for service, valid in validation_result.items() if not valid]
-            logger.error(f"以下服务配置无效: {invalid_services}")
-            logger.error("请检查环境变量配置后重试")
-            raise SystemExit(1)
-
-        logger.info("所有启动服务配置验证通过")
-        env_distributor.distribute_env_vars(list(services))
-
-        # 直接运行单个服务
-        service_type = services[0]
-        port = mysql_port if service_type == "mysql" else dify_port
-        logger.info(f"stdio模式启动 {service_type} 服务")
-        mcp_server_main(mode, host, service_type, port, oauth)
-        return
-
-    # 非stdio模式的多线程逻辑保持不变
-    import threading
-    import time
-
-    logger.info(f"主参数: mode={mode}, host={host}, mysql_port={mysql_port}, dify_port={dify_port}, oauth={oauth}")
-
-    threads = []
-    stop_event = threading.Event()
-
-    # 启动MySQL服务的线程
-    if "mysql" in services:
-        def mysql_thread_func():
-            try:
-                logger.info(f"启动MySQL服务 (线程ID: {threading.get_ident()})")
-                mcp_server_main(mode, host, "mysql", mysql_port, oauth)
-            except Exception as exception:
-                logger.exception(f"MySQL服务异常: {exception}")
-            finally:
-                logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] MySQL服务已停止")
-
-        mysql_thread = threading.Thread(target=mysql_thread_func, name="MySQL_Service")
-        mysql_thread.daemon = True
-        mysql_thread.start()
-        threads.append(("MySQL", mysql_thread))
-        logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] MySQL服务已启动 (线程ID: {mysql_thread.ident})")
-
-    # 启动Dify服务的线程
-    if "dify" in services:
-        def dify_thread_func():
-            try:
-                logger.info(f"启动Dify服务 (线程ID: {threading.get_ident()})")
-                mcp_server_main(mode, host, "dify", dify_port, oauth)
-            except Exception as exception:
-                logger.exception(f"Dify服务异常: {exception}")
-            finally:
-                logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] Dify服务已停止")
-
-        dify_thread = threading.Thread(target=dify_thread_func, name="Dify_Service")
-        dify_thread.daemon = True
-        dify_thread.start()
-        threads.append(("Dify", dify_thread))
-        logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] Dify服务已启动 (线程ID: {dify_thread.ident})")
-
-    if not threads:
-        logger.info("未启动任何服务")
-        return
-
-    logger.info(f"已启动 {len(threads)} 个服务，模式: {mode}")
-    logger.info("按 Ctrl+C 停止所有服务")
-
-    # 信号处理和线程监控逻辑保持不变
-    def signal_handler(signum, frame):
-        logger.info("\n收到中断信号，正在关闭服务...")
-        stop_event.set()
+    # 设置信号处理
+    def signal_handler(sig, frame):
+        logger.info(f"接收到信号 {sig}，正在关闭服务器...")
+        raise SystemExit(0)
 
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
     try:
-        while not stop_event.is_set():
-            time.sleep(1)
-            running_count = sum(1 for _, thread in threads if thread.is_alive())
-            if running_count == 0:
-                logger.info("所有服务已停止")
-                break
-        else:
-            for service_name, thread in threads:
-                thread.join(timeout=5)
-                if thread.is_alive():
-                    logger.warning(f"{service_name} 服务线程未能在超时内停止")
-
+        asyncio.run(run_aggregated())
+    except KeyboardInterrupt:
+        logger.info("用户中断，服务器已关闭")
     except Exception as e:
-        logger.exception(f"服务监控异常: {e}")
-    finally:
-        logger.info("服务控制器退出")
-        stop_event.set()
+        logger.error(f"服务器运行失败: {e}")
+        raise
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

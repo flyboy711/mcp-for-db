@@ -8,6 +8,7 @@ from mcp_for_db.server.shared.utils import get_logger
 logger = get_logger(__name__)
 logger.setLevel(LOG_LEVEL)
 
+
 @dataclass
 class DatabaseKnowledgeContext:
     """数据库知识上下文"""
@@ -98,9 +99,9 @@ class DBAPromptTemplate:
         ## 回答格式说明
             - 使用 `代码块` 标识SQL语句、命令和配置
             - 使用 **加粗** 强调重要概念和关键点
-            - 使用 ⚠️ 标识风险提醒
-            - 使用 💡 标识最佳实践提示
-            - 使用 📚 标识知识库引用来源
+            - 使用 标识风险提醒
+            - 使用 标识最佳实践提示
+            - 使用 标识知识库引用来源
                 
         请根据以上要求，为用户提供专业、准确、实用的数据库技术支持。
         ---
@@ -112,11 +113,11 @@ class DBAPromptTemplate:
     def _build_knowledge_context(self, rag_context: DatabaseKnowledgeContext) -> str:
         """构建知识库上下文"""
         if not rag_context.retrieved_segments:
-            return """### ⚠️ 知识库检索状态
+            return """###知识库检索状态
                       暂无相关知识库内容检索到，回答将主要基于通用数据库知识和最佳实践。建议用户提供更具体的问题描述以获得更精准的知识库匹配。"""
 
         context_parts = []
-        context_parts.append("### 📚 相关知识库内容")
+        context_parts.append("###相关知识库内容")
 
         for i, segment in enumerate(rag_context.retrieved_segments, 1):
             content = segment.get("内容", "").strip()
@@ -129,8 +130,8 @@ class DBAPromptTemplate:
 
             context_parts.append(f"""
                     #### 知识片段 {i} (相关度: {score:.3f})
-                    **📖 来源**: {source}
-                    **📄 内容**:{content}
+                    **来源**: {source}
+                    **内容**:{content}
                     """)
 
         return "\n".join(context_parts)
@@ -138,9 +139,9 @@ class DBAPromptTemplate:
     def _build_search_info(self, rag_context: DatabaseKnowledgeContext) -> str:
         """构建检索信息"""
         info_parts = [
-            f"- **🔍 检索查询**: {rag_context.query}",
-            f"- **📊 检索方法**: {rag_context.search_method}",
-            f"- **📈 检索结果数**: {len(rag_context.retrieved_segments)} 个知识片段",
+            f"- **检索查询**: {rag_context.query}",
+            f"- **检索方法**: {rag_context.search_method}",
+            f"- **检索结果数**: {len(rag_context.retrieved_segments)} 个知识片段",
         ]
 
         if rag_context.keywords:
@@ -148,18 +149,18 @@ class DBAPromptTemplate:
             keywords_display = rag_context.keywords[:10]  # 只显示前10个关键词
             if len(rag_context.keywords) > 10:
                 keywords_display.append("...")
-            info_parts.append(f"- **🏷️ 相关关键词**: {', '.join(keywords_display)}")
+            info_parts.append(f"- **相关关键词**: {', '.join(keywords_display)}")
 
         if rag_context.knowledge_sources:
             unique_sources = list(set(rag_context.knowledge_sources))
-            info_parts.append(f"- **📚 涉及文档**: {', '.join(unique_sources)}")
+            info_parts.append(f"- **涉及文档**: {', '.join(unique_sources)}")
 
         return "\n".join(info_parts)
 
     def _build_confidence_indicator(self, rag_context: DatabaseKnowledgeContext) -> str:
         """构建置信度指标"""
         if not rag_context.confidence_scores:
-            return """### ⚠️ 知识可信度评估
+            return """###知识可信度评估
                     无法评估知识库内容的可信度。建议：
                     - 结合实际环境进行验证
                     - 在非生产环境测试相关操作
@@ -170,16 +171,16 @@ class DBAPromptTemplate:
         min_score = min(rag_context.confidence_scores)
 
         if avg_score >= 0.8:
-            confidence_level = "🟢 高置信度"
+            confidence_level = "高置信度"
             advice = "检索到的知识库内容与问题高度匹配，可作为权威技术参考。"
         elif avg_score >= 0.5:
-            confidence_level = "🟡 中等置信度"
+            confidence_level = "中等置信度"
             advice = "检索到的知识库内容部分相关，建议结合具体业务场景判断适用性。"
         else:
-            confidence_level = "🔴 低置信度"
+            confidence_level = "低置信度"
             advice = "检索到的知识库内容相关性较低，将主要基于通用数据库知识回答。"
 
-        return f"""### 📊 知识库内容可信度
+        return f"""###知识库内容可信度
                 **{confidence_level}**
                 - 平均匹配度: {avg_score:.3f}
                 - 最高匹配度: {max_score:.3f}  

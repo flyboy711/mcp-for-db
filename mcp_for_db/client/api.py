@@ -23,7 +23,7 @@ logger.setLevel(LOG_LEVEL)
 
 # 全局变量
 mcp_service = None
-conversation_cache = {}  # 简单的会话缓存
+conversation_cache = {}  # 简单的会话缓存:模型上下文 token（字符数） 有限（固定窗口大小），故字典缓存方式暂存历史会话记录即可
 
 
 @asynccontextmanager
@@ -31,32 +31,32 @@ async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     global mcp_service
 
-    # 启动时就初始化 MCP 服务
-    logger.info("正在初始化 MCP 服务...")
+    # 启动时就初始化 MCP 客户端服务
+    logger.info("正在初始化 MCP 客户端服务...")
     try:
         mcp_service = MCPClient()
         await mcp_service.initialize()
-        logger.info("MCP服务初始化完成")
+        logger.info("MCP 客户端服务初始化完成")
     except Exception as e:
-        logger.error(f"MCP服务初始化失败: {e}")
+        logger.error(f"MCP 客户端服务初始化失败: {e}")
         raise
 
     yield
 
     # 关闭时清理资源
-    logger.info("正在清理 MCP 服务...")
+    logger.info("正在清理 MCP 客户端服务...")
     if mcp_service:
         try:
             await mcp_service.cleanup()
-            logger.info("MCP 服务清理完成")
+            logger.info("MCP 客户端服务清理完成")
         except Exception as e:
-            logger.error(f"清理 MCP 服务时出错: {e}")
+            logger.error(f"清理 MCP 客户端服务时出错: {e}")
 
 
 # 创建 FastAPI 应用
 app = FastAPI(
-    title="MCP智能问答API",
-    description="基于MCP客户端和大模型的智能问答接口，支持数据库查询和多种AI模型",
+    title="MCP 智能问答 API",
+    description="基于 MCP 客户端和大模型的智能问答接口：提供知识库问答和数据库查询功能",
     version="1.0.0",
     lifespan=lifespan,
     docs_url="/docs",
@@ -66,7 +66,7 @@ app = FastAPI(
 # 添加CORS中间件
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 生产环境请限制具体域名
+    allow_origins=["*"],  # 生产环境需要限制具体域名
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -84,7 +84,7 @@ class QueryRequest(BaseModel):
     class Config:
         json_schema_extra = {
             "example": {
-                "question": "显示所有数据库表",
+                "question": "显示所有数据库表信息",
                 "conversation_id": "conv_12345",
                 "include_tool_info": True
             }
@@ -217,7 +217,6 @@ async def process_query(
     这是核心接口，用户提交问题，系统调用 MCP 客户端和大模型处理后返回结果。
     支持：
     - 自然语言问题处理
-    - 自动工具调用（如数据库查询）
     - 多轮对话管理
     - 性能监控
     """
@@ -352,9 +351,9 @@ async def chat_stream(
                         "index": i
                     }
                     yield f"data: {json.dumps(chunk_data, ensure_ascii=False)}\n"
-                    await asyncio.sleep(0.1)  # 模拟延迟
+                    await asyncio.sleep(0.1)
 
-            # 发送完成信号
+                    # 发送完成信号
             final_data = {
                 "type": "done",
                 "conversation_id": conversation_id,
@@ -569,7 +568,9 @@ def main():
 
     logger.info(f"启动 MCP 智能问答 API 服务...")
     logger.info(f"服务地址: http://{args.host}:{args.port}")
+    print(f"服务地址: http://{args.host}:{args.port}")
     logger.info(f"API文档: http://{args.host}:{args.port}/docs")
+    print(f"API文档: http://{args.host}:{args.port}/docs")
 
     uvicorn.run(
         "mcp_for_db.client.api:app",

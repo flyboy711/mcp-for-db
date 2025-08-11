@@ -24,7 +24,7 @@ async def comprehensive_test():
     try:
         # 初始化
         print("初始化资源...")
-        await mysql_server._initialize_global_resources()
+        await mysql_server.initialize_global_resources()
         print("资源初始化完成")
 
         # 测试工具
@@ -118,7 +118,7 @@ async def comprehensive_test():
     finally:
         # 清理资源
         print("\n清理资源...")
-        await mysql_server._close_global_resources()
+        await mysql_server.close_global_resources()
         print("资源清理完成")
 
 

@@ -99,7 +99,7 @@ export DIFY_DATASET_ID="03918555-2466-4a7d-b7cd-b30d973934eb"
 ```
 ```bash
 # 终端启动所有 mcp server
-python -m mcp_for_db.server.cli.server
+python -m mcp_for_db.server.cli.server --mode stdio --aggregated
 
 # 终端单独启动 mysql mcp server
 python -m mcp_for_db.server.cli.mysql_cli

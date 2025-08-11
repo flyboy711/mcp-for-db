@@ -1,6 +1,4 @@
 import asyncio
-import os
-
 import click
 
 from mcp_for_db import LOG_LEVEL
@@ -64,7 +62,7 @@ def dify_main(mode, host, port, oauth):
             logger.error("请检查环境变量配置后重试")
             raise SystemExit(1)
 
-        logger.info("✅ 所有启动服务配置验证通过")
+        logger.info("所有启动服务配置验证通过")
 
         # 分发环境变量到配置文件
         env_distributor.distribute_env_vars(enabled_services)

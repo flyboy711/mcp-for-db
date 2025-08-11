@@ -27,28 +27,27 @@ class ModelProvider(Enum):
     CUSTOM_OPENAI_COMPATIBLE = "custom_openai"
 
 
-class OptimizedTaskProcessor:
-    """优化任务处理 - 仅通过提示词模板进行编排"""
+class TaskProcessor:
+    """优化任务处理：仅通过提示词模板进行编排，目前也仅借助 mysql 服务提供的提示词编排 mysql 服务工具"""
 
     def __init__(self, mcp_client):
         self.client = mcp_client
         self.logger = mcp_client.logger
-        self.mcp_logger = mcp_client.mcp_logger
+        self.mcp_logger = mcp_client.mcp_logger  # 记录客户端与服务端交互的数据格式
 
-        # 提示词模板映射
+        # 提示词模板映射：主要是为 mysql 服务提供系统提示词编排工具处理效率
         self.prompt_templates = {
-            "data_query": "query-table-data-prompt",
-            "admin_task": "smart-tools-prompt"
+            "smart_task": "smart-tools-prompt"
         }
 
     async def process_query(self, user_query: str, conversation_history: List[Dict] = None) -> Dict[str, Any]:
-        """处理查询 - 仅使用提示词优化"""
+        """处理查询：仅使用提示词优化"""
         start_time = time.time()
         self.mcp_logger.log_query_processing(user_query)
 
         try:
-            # 检查是否需要特殊提示词
-            enhanced_prompt = await self._get_simple_prompt(user_query)
+            # 使用 mysql 服务提供的提示词
+            enhanced_prompt = await self._get_mysql_prompt(user_query)
 
             # 构建消息
             messages = conversation_history.copy() if conversation_history else []
@@ -68,7 +67,7 @@ class OptimizedTaskProcessor:
                 "tool_calls": response.get("tool_calls", []),
                 "messages": response["messages"],
                 "optimization_used": bool(enhanced_prompt),
-                "prompt_type": self._get_prompt_type(user_query) if enhanced_prompt else None,
+                "prompt_type": TaskProcessor.get_prompt_type(user_query) if enhanced_prompt else None,
                 "tools_used": len(self.client.all_tools),
                 "execution_time": time.time() - start_time
             }
@@ -78,28 +77,23 @@ class OptimizedTaskProcessor:
             # 回退到标准处理
             return await self._fallback_process(user_query, conversation_history)
 
-    def _get_prompt_type(self, query: str) -> str:
+    @staticmethod
+    def get_prompt_type(query: str) -> str:
         """确定提示词类型"""
         query_lower = query.lower()
-
-        if any(kw in query_lower for kw in ["查询", "显示", "获取", "数据"]):
-            return "data_query"
-        elif any(kw in query_lower for kw in ["诊断", "优化", "性能", "分析"]):
-            return "admin_task"
+        if any(kw in query_lower for kw in
+               ["查询", "查找", "数据库", "获取", "表", "字段", "数据", "诊断", "优化", "性能", "分析", "统计",
+                "索引", "信息"]):
+            return "smart_task"
         else:
             return "general"
 
-    async def _get_simple_prompt(self, query: str) -> Optional[str]:
-        """获取简化提示词"""
-        query_lower = query.lower()
-
+    async def _get_mysql_prompt(self, query: str) -> Optional[str]:
+        """获取 mysql 服务提示词"""
         try:
-            # 数据查询类任务
-            if any(kw in query_lower for kw in ["查询", "显示", "获取", "数据", "表", "字段"]):
-                return await self.client.get_prompt("query-table-data-prompt", {"desc": query})
-
-            # 管理诊断类任务
-            elif any(kw in query_lower for kw in ["诊断", "优化", "性能", "分析"]):
+            if any(kw in query for kw in
+                   ["查询", "查找", "数据库", "获取", "表", "字段", "数据", "诊断", "优化", "性能", "分析", "统计",
+                    "索引", "信息"]):
                 return await self.client.get_prompt("smart-tools-prompt", {"task": query})
 
         except Exception as e:
@@ -111,7 +105,7 @@ class OptimizedTaskProcessor:
         """使用所有工具执行查询"""
         start_time = time.time()
 
-        response = await self.client._chat_with_tools_direct(messages, self.client.all_tools)
+        response = await self.client.chat_with_tools_direct(messages, self.client.all_tools)
 
         exec_time = time.time() - start_time
         self.mcp_logger.log_llm_interaction(
@@ -123,11 +117,10 @@ class OptimizedTaskProcessor:
 
         return response
 
-    async def _fallback_process(self, user_query: str,
-                                conversation_history: List[Dict] = None) -> Dict[str, Any]:
+    async def _fallback_process(self, user_query: str, conversation_history: List[Dict] = None) -> Dict[str, Any]:
         """回退处理"""
         self.logger.info("使用回退处理模式")
-        return await self.client._process_query_standard(user_query, conversation_history)
+        return await self.client.process_query_standard(user_query, conversation_history)
 
 
 class MCPClient:
@@ -151,7 +144,7 @@ class MCPClient:
         self.provider = self._detect_provider()
 
         if not self.api_key:
-            raise ValueError("未找到API密钥")
+            raise ValueError("未找到 API 密钥")
 
         self.client = self._initialize_client()
 
@@ -163,12 +156,13 @@ class MCPClient:
         self.all_prompts = []
 
         self.servers_config = servers_config or {
+            # "MCPServer": "mcp_for_db.server.cli.server",
             "MySQLServer": "mcp_for_db.server.cli.mysql_cli",
             "DiFyServer": "mcp_for_db.server.cli.dify_cli",
         }
 
         self._is_initialized = False
-        self.logger.info("MCP客户端初始化完成")
+        self.logger.info("MCP 客户端初始化完成")
 
     def _detect_provider(self) -> ModelProvider:
         model_lower = self.model.lower()
@@ -199,27 +193,28 @@ class MCPClient:
         try:
             await self.connect_to_servers(self.servers_config)
             self._is_initialized = True
-            self.logger.info("MCP服务初始化完成")
+            self.logger.info("MCP 服务初始化完成")
         except Exception as e:
-            self.logger.error(f"MCP服务初始化失败: {e}")
+            self.logger.error(f"MCP 服务初始化失败: {e}")
             raise
 
     async def process_query(self, user_query: str,
-                            conversation_history: List[Dict] = None,
-                            use_optimization: bool = True) -> Dict[str, Any]:
+                            conversation_history: List[Dict] = None, use_optimization: bool = True) -> Dict[str, Any]:
         """处理查询 - 使用优化的处理器"""
         if not self._is_initialized:
             await self.initialize()
 
         if use_optimization:
-            processor = OptimizedTaskProcessor(self)
+            processor = TaskProcessor(self)
             return await processor.process_query(user_query, conversation_history)
         else:
-            return await self._process_query_standard(user_query, conversation_history)
+            return await self.process_query_standard(user_query, conversation_history)
 
-    async def _chat_with_tools_direct(self, messages: List[Dict],
-                                      tools: List[Dict]) -> Dict[str, Any]:
-        """直接使用指定工具进行对话"""
+    async def chat_with_tools_direct(self, messages: List[Dict], tools: List[Dict]) -> Dict[str, Any]:
+        """
+        直接使用指定工具进行对话
+        千问大模型接口参考文档：https://bailian.console.aliyun.com/?tab=api#/api/?type=model&url=2712576
+        """
         tool_calls_info = []
         max_iterations = 5
         iteration = 0
@@ -298,7 +293,7 @@ class MCPClient:
                         "function": {
                             "name": function_name,
                             "description": tool.description or f"工具: {tool.name}",
-                            "parameters": self._convert_input_schema(tool.inputSchema)
+                            "parameters": MCPClient._convert_input_schema(tool.inputSchema)
                         }
                     }
                     self.all_tools.append(tool_definition)
@@ -348,7 +343,8 @@ class MCPClient:
         except Exception as e:
             raise Exception(f"获取提示词失败: {str(e)}")
 
-    def _convert_input_schema(self, input_schema: Any) -> Dict:
+    @staticmethod
+    def _convert_input_schema(input_schema: Any) -> Dict:
         if not input_schema:
             return {"type": "object", "properties": {}, "required": []}
 
@@ -400,9 +396,9 @@ class MCPClient:
         await session.initialize()
         return session
 
-    async def _process_query_standard(self, user_query: str,
-                                      conversation_history: List[Dict] = None) -> Dict[str, Any]:
-        # 保持原有逻辑
+    async def process_query_standard(self, user_query: str,
+                                     conversation_history: List[Dict] = None) -> Dict[str, Any]:
+
         messages = conversation_history.copy() if conversation_history else []
         messages.append({"role": "user", "content": user_query})
 
@@ -421,7 +417,7 @@ class MCPClient:
 
     async def _chat_with_tools_openai(self, messages: List[Dict]) -> Dict[str, Any]:
         # 直接使用 all_tools
-        return await self._chat_with_tools_direct(messages, self.all_tools)
+        return await self.chat_with_tools_direct(messages, self.all_tools)
 
     async def _handle_tool_calls_openai(self, messages: List[Dict], response) -> tuple:
         tool_calls = response.choices[0].message.tool_calls
@@ -634,7 +630,8 @@ async def main_test():
         test_queries = [
             "显示当前数据库的基本信息",
             "显示所有数据库表",
-            "查询用户表t_users的结构信息",
+            "查询用户表 t_users 的结构信息",
+            "OceanBase 架构原理是什么？"
         ]
 
         for query in test_queries:
@@ -673,14 +670,14 @@ async def main():
         print("连接成功！\n")
 
         if args.interactive or not args.query:
-            print("🚀 MCP 数据库客户端 - 智能交互模式")
+            print("MCP 数据库客户端 - 智能交互模式")
             print("=" * 50)
             print("命令说明:")
-            print("  quit/exit/q    - 退出程序")
-            print("  help           - 查看可用工具")
-            print("  prompts        - 查看可用提示词")
-            print("  health         - 查看系统状态")
-            print("  opt on/off     - 开启/关闭智能优化")
+            print("quit/exit/q    - 退出程序")
+            print("help           - 查看可用工具")
+            print("prompts        - 查看可用提示词")
+            print("health         - 查看系统状态")
+            print("opt on/off     - 开启/关闭智能优化")
             print("=" * 50)
 
             optimization_enabled = not args.no_optimize
@@ -690,7 +687,7 @@ async def main():
 
             while True:
                 try:
-                    query = input(f"\n{'🧠' if optimization_enabled else '💻'} 请输入您的问题: ").strip()
+                    query = input(f"\n{'🧠' if optimization_enabled else ''} 请输入您的问题: ").strip()
                     if not query:
                         continue
 
@@ -724,23 +721,22 @@ async def main():
                                         args_list.append(arg_name)
 
                                     if args_list:
-                                        print(f" 参数: {', '.join(args_list)}")
+                                        print(f"参数: {', '.join(args_list)}")
                                 except Exception as e:
-                                    print(f" 参数: (解析失败: {e})")
+                                    print(f"参数: (解析失败: {e})")
 
                         if len(prompts) > 10:
                             print(f"\n... 还有 {len(prompts) - 10} 个提示词")
                         continue
 
-                    # 其他命令保持不变...
                     if query.lower().startswith('opt '):
                         setting = query[4:].strip().lower()
                         if setting == 'on':
                             optimization_enabled = True
-                            print("✅ 智能优化已开启")
+                            print("智能优化已开启")
                         elif setting == 'off':
                             optimization_enabled = False
-                            print("❌ 智能优化已关闭")
+                            print("智能优化已关闭")
                         else:
                             print("用法: opt on/off")
                         continue
@@ -748,13 +744,13 @@ async def main():
                     if query.lower() == 'help':
                         tools = client.get_available_tools()
                         print(f"\n可用工具 ({len(tools)} 个):")
-                        for i, tool in enumerate(tools[:10], 1):
+                        for i, tool in enumerate(tools[:15], 1):
                             name = tool['function']['name']
                             desc = tool['function']['description']
                             print(f"{i:2d}. {name}")
-                            print(f"    {desc[:80]}{'...' if len(desc) > 80 else ''}")
-                        if len(tools) > 10:
-                            print(f"\n... 还有 {len(tools) - 10} 个工具")
+                            print(f" {desc[:200]}{'...' if len(desc) > 200 else ''}")
+                        if len(tools) > 15:
+                            print(f"\n... 还有 {len(tools) - 15} 个工具")
                         continue
 
                     if query.lower() == 'health':
@@ -769,7 +765,7 @@ async def main():
                         for server_name, server_info in health['servers'].items():
                             status_icon = "✅" if server_info['status'] == 'healthy' else "❌"
                             print(
-                                f"  {status_icon} {server_name}: {server_info.get('tools_count', 0)} 工具, {server_info.get('prompts_count', 0)} 提示词")
+                                f" {status_icon} {server_name}: {server_info.get('tools_count', 0)} 工具, {server_info.get('prompts_count', 0)} 提示词")
                             if server_info['status'] != 'healthy':
                                 print(f" 错误: {server_info.get('error', '未知错误')}")
                         continue
@@ -790,7 +786,7 @@ async def main():
                         continue
 
                     # 处理查询
-                    print(f"🔄 处理中... ({'🧠智能优化' if optimization_enabled else '💻 标准模式'})")
+                    print(f"处理中... ({'智能优化' if optimization_enabled else '标准模式'})")
                     start_time = time.time()
 
                     result = await client.process_query(
@@ -808,8 +804,8 @@ async def main():
                         conversation_history.append({"role": "assistant", "content": result['answer']})
 
                         # 保持历史记录在合理范围内
-                        if len(conversation_history) > 20:
-                            conversation_history = conversation_history[-20:]
+                        if len(conversation_history) > 100:
+                            conversation_history = conversation_history[-100:]
 
                         # 显示执行信息
                         info_parts = []
@@ -830,16 +826,16 @@ async def main():
 
                         # 显示工具调用详情
                         if result.get("tool_calls") and len(result["tool_calls"]) > 0:
-                            print(f"\n🔧 工具调用详情:")
+                            print(f"\n 工具调用详情:")
                             for i, call in enumerate(result["tool_calls"], 1):
                                 status_icon = "✅" if call.get("success", True) else "❌"
                                 tool_name = call.get("tool_name", "unknown")
-                                print(f"  {i}. {status_icon} {tool_name}")
+                                print(f" {i}. {status_icon} {tool_name}")
                                 if not call.get("success", True):
                                     result_preview = str(call.get("result", ""))[:100]
-                                    print(f"     错误: {result_preview}...")
+                                    print(f" 错误: {result_preview}...")
                     else:
-                        print(f"\n❌ 错误: {result.get('error', '未知错误')}")
+                        print(f"\n错误: {result.get('error', '未知错误')}")
 
                         conversation_history.append({"role": "user", "content": query})
                         conversation_history.append({
@@ -848,40 +844,40 @@ async def main():
                         })
 
                 except KeyboardInterrupt:
-                    print("\n\n接收到中断信号，正在退出...")
+                    print("\n接收到中断信号，正在退出...")
                     break
                 except Exception as e:
-                    print(f"❌ 处理错误: {e}")
+                    print(f"处理错误: {e}")
                     import traceback
                     print(f"详细错误: {traceback.format_exc()}")
 
         else:
             # 单次查询模式
             optimization_enabled = not args.no_optimize
-            print(f"🔍 处理查询: {args.query}")
-            print(f"🧠 智能优化: {'开启' if optimization_enabled else '关闭'}")
+            print(f"处理查询: {args.query}")
+            print(f"智能优化: {'开启' if optimization_enabled else '关闭'}")
 
             start_time = time.time()
             result = await client.process_query(args.query, use_optimization=optimization_enabled)
 
             if result["success"]:
-                print(f"\n💡 回答:")
+                print(f"\n回答:")
                 print(result["answer"])
 
                 exec_time = result.get('execution_time', time.time() - start_time)
                 if result.get("optimization_used"):
-                    opt_info = f"(🧠 {result.get('prompt_type', 'unknown')}优化, {exec_time:.2f}s)"
+                    opt_info = f"( {result.get('prompt_type', 'unknown')}优化, {exec_time:.2f}s)"
                     print(f"\n{opt_info}", file=sys.stderr)
                 else:
-                    print(f"\n(💻 标准模式, {exec_time:.2f}s)", file=sys.stderr)
+                    print(f"\n(标准模式, {exec_time:.2f}s)", file=sys.stderr)
 
                 sys.exit(0)
             else:
-                print(f"❌ 错误: {result.get('error', '未知错误')}", file=sys.stderr)
+                print(f"错误: {result.get('error', '未知错误')}", file=sys.stderr)
                 sys.exit(1)
 
     except Exception as e:
-        print(f"❌ 启动失败: {e}")
+        print(f"启动失败: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)

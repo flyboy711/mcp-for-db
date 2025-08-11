@@ -6,7 +6,7 @@ from typing import Dict, Any, List
 
 
 class MCPCommunicationLogger:
-    """MCP 通信日志记录"""
+    """ MCP 通信日志记录 """
 
     def __init__(self, log_file: str = "datas/logs/mcp_debug_io.log"):
         self.log_file = Path(__file__).parent.parent.parent.joinpath(log_file)
@@ -86,7 +86,7 @@ class MCPCommunicationLogger:
 
     def log_llm_interaction(self, model: str, messages: List[Dict], response: Any = None,
                             success: bool = True, error: str = None, execution_time: float = None):
-        """记录LLM交互"""
+        """记录 LLM 交互"""
         data = {
             "model": model,
             "messages_count": len(messages),
@@ -103,7 +103,7 @@ class MCPCommunicationLogger:
                              success: bool = True, error: str = None, execution_time: float = None):
         """记录查询处理"""
         data = {
-            "query": query[:500],  # 限制查询长度
+            "query": query[:1000],  # 限制查询长度
             "success": success,
             "execution_time": execution_time
         }
