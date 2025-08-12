@@ -1,6 +1,6 @@
 [project]
-name = "mcp_for_db"
-version = "1.0.1"
+name = "mcp-for-db"
+version = "1.0.2"
 license = { text = "MIT" }
 description = "Multi-service MCP server supporting databases and AI services with FastAPI client"
 readme = "README.md"
@@ -38,7 +38,7 @@ dependencies = [
 # 服务器和客户端脚本入口
 [project.scripts]
 # 服务端入口
-mcp_for_db = "mcp_for_db.server.cli.server:main"
+mcp-for-db = "mcp_for_db.server.cli.server:main"
 mcp_mysql = "mcp_for_db.server.cli.mysql_cli:mysql_main"
 mcp_dify = "mcp_for_db.server.cli.dify_cli:dify_main"
 # 客户端API入口
