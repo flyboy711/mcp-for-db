@@ -1,8 +1,11 @@
 # MCP-For-DB
+
 ## 1. 简介
+
 官方仓库地址：https://github.com/wenb1n-dev/mysql_mcp_server_pro.
 
-本项目借鉴官方仓库基于 Low-Level 接口设计工具、提示词自动注册与发现的架构设计思路，在其基础上做进一步开发，进一步增强 MCP for DB 的功能。
+本项目借鉴官方仓库基于 Low-Level 接口设计工具、提示词自动注册与发现的架构设计思路，在其基础上做进一步开发，进一步增强 MCP
+for DB 的功能。
 
 官方仓库中基于 Low-Level 接口设计工具、提示词自动注册与发现设计思路如下：
 
@@ -27,17 +30,21 @@
 最后，我们还实现了 FastAPI 接口，该接口接收用户的提问，然后经过客户端+服务端的黑盒化处理，接口最终返回经大模型处理后的用户的问题的答案。
 
 ## 2. 功能介绍
-本服务提供自然语言操作数据库的功能，让您直接使用自然语言查询数据库，比如描述查询需求，分析数据库健康状态，分析复杂 SQL 语句，慢查询等，但做了 SQL 鉴权哦。
+
+本服务提供自然语言操作数据库的功能，让您直接使用自然语言查询数据库，比如描述查询需求，分析数据库健康状态，分析复杂 SQL
+语句，慢查询等，但做了 SQL 鉴权哦。
 同时，本服务基于微服务设计思想也添加了访问 Dify 知识库的功能，您可以配置好相关信息访问 Dify 中搭建的知识库。
 
 本项目与参考的开源项目的共性和区别如下：
 
 共性：
+
 - 支持所有模型上下文协议 (MCP) 传输模式 (STDIO、SSE、Streamable Http)
 - 支持 OAuth2.0；支持中文字段转拼音
 - 支持根据表注释查询数据库表名和字段；支持 SQL 执行计划分析；支持表锁分析；支持数据库健康状态分析
 
 区别：新增部分数据库工具，资源加载功能，数据库侧的连接池优化，SQL鉴权，DiFy知识库访问工具以及客户端。
+
 - 数据库侧的连接池优化；环境变量的多服务自适应加载；会话级别的环境配置管理器
 - 支持 多用户隔离访问数据库，某用户修改配置，其他用户无感，互不干扰
 - 支持 带 SQL 拦截解析权限认证的 SQL 执行&执行计划分析
@@ -68,38 +75,47 @@
 | analyze_query_performance | 分析SQL查询的性能特征，包括执行时间、资源使用等                               |
 | collect_table_stats       | 收集指定表的元数据、统计信息和数据分布情况（如NDV等）                            |                            
 | smart_tool                | 动态编排已有工具：提问时可指定使用该工具进行回答                                |                           
+| retrieve_knowledge        | 检索DiFy知识库并生成 RAG 增强的 DBA 专业提示词                          |
+| switch_dify_knowledge     | 动态切换DiFy知识库配合信息:知识库ID、API密钥、知识库请求基地址                    |
 
 ## 4. 使用说明
+
 ### 4.1 本地开发测试
+
 项目最好创建单独的虚拟环境，而在同步虚拟环境前，需先生成对应的 `requirements.txt` 依赖文件：
+
 ```bash
 uv pip compile pyproject.toml -o requirements.txt
 ```
+
 然后同步虚拟环境（会在项目根目录下自动创建虚拟环境）：
+
 ```bash
 uv sync
 ```
+
 安装依赖包：
+
 ```bash
 uv pip install -r requirements.txt
 ```
+
 项目支持三种通信机制：stdio、sse、streamable_http，默认 stdio。
 
 我们在终端中启动 MCP 服务器：
 注意若采用 `stdio` 通信机制，需要设置环境变量：
+
 ```bash
 export MYSQL_HOST="localhost"
 export MYSQL_PORT="13308"
 export MYSQL_USER="videx"
 export MYSQL_PASSWORD="password"
 export MYSQL_DATABASE="tpch_tiny"
-export DIFY_BASE_URL="https://aistudio.dewu-inc.com/v1"
-export DIFY_API_KEY="dataset-2v5Y9RVF6YJtHNaog49RlZR7"
-export DIFY_DATASET_ID="03918555-2466-4a7d-b7cd-b30d973934eb"
 ```
+
 ```bash
 # 终端启动所有 mcp server
-python -m mcp_for_db.server.cli.server --mode stdio --aggregated
+python -m mcp_for_db.server.cli.server
 
 # 终端单独启动 mysql mcp server
 python -m mcp_for_db.server.cli.mysql_cli
@@ -121,10 +137,12 @@ python -m mcp_for_db.server.cli.mysql_cli --oauth true
 ```
 
 VSCode 中安装 Cline 插件并配置 JSON 文件进行访问：
+
 ```bash
 # 注意启动多服务的脚本参数格式
 python -m mcp_for_db.server.cli.mysql_cli --mode streamable_http 
 ```
+
 ```json
 {
   "mcpServers": {
@@ -138,21 +156,24 @@ python -m mcp_for_db.server.cli.mysql_cli --mode streamable_http
 ```
 
 相应的，`sse` 模式配置：
+
 ```bash
 python -m mcp_for_db.server.cli.mysql_cli --mode sse 
 ```
+
 对应的 Json 配置：
+
 ```json
  "mcp_for_db_sse": {
-      "disabled": true,
-      "timeout": 60,
-      "type": "sse",
-      "url": "http://localhost:9000/sse"
-    },
+"disabled": true,
+"timeout": 60,
+"type": "sse",
+"url": "http://localhost:9000/sse"
+},
 ```
 
-
 若启用认证服务,默认使用自带的OAuth 2.0 密码模式认证，可以在 `envs/common.env` 中修改自己的认证服务地址：
+
 ```bash
 # 登录页面配置
 MCP_LOGIN_URL=http://localhost:3000/login
@@ -162,6 +183,7 @@ OAUTH_USER_PASSWORD=admin
 ```
 
 再修改 Cline 的 MCP Json 配置文件：
+
 ```json
 {
   "mcpServers": {
@@ -180,11 +202,13 @@ OAUTH_USER_PASSWORD=admin
 ```
 
 采用 stdio 方式启动：
+
 ```bash
 python -m mcp_for_db.server.cli.mysql_cli
 ```
 
 在 Cline 中添加如下 Json 配置：
+
 ```json
 {
   "mcpServers": {
@@ -210,7 +234,10 @@ python -m mcp_for_db.server.cli.mysql_cli
 }
 ```
 
-### 4.2 打包构建上传⏫
+### 4.2 打包构建上传 Odin
+
+上传整个架包，但仅提供服务端的服务，因为从市场里下载服务后在Cline中配好也仅能连接聚合服务端脚本
+
 ```bash
 # 先下载构建依赖包
 pip install --upgrade pip build twine
@@ -235,6 +262,28 @@ mcp_mysql
 
 # 上传到仓库
 twine upload -r dewuPython dist/*
+```
+
+### 4.3 Docker 部署 FastAPI
+通过 Docker 部署启动 FastAPI，这也自动的初始化了客户端服务和服务端服务，我们请求相关接口就能使用AI功能了。
+```dockerfile
+# 构建镜像文件
+docker build -t mcp-for-db .
+```
+启动你想启动的服务：
+```dockerfile
+# 启动 FastAPI 服务
+# 启动容器时使用 host 网络
+docker run -d -p 8000:8000 \
+  -e MYSQL_HOST="rm-uf6pyrv408i5f0gap.mysql.rds.aliyuncs.com" \
+  -e MYSQL_PORT="3306" \
+  -e MYSQL_USER="onedba" \
+  -e MYSQL_PASSWORD="" \
+  -e MYSQL_DATABASE="du_trade_timeout_db_3" \
+  --name mcp-server mcp-for-db server
+  
+# 启动交互式客户端
+docker run -it --rm --network host mcp-for-db client
 ```
 
 ## 5. 效果展示
@@ -350,10 +399,11 @@ ORDER BY revenue DESC;
 
 总结就是：目前权限限定为查询操作DQL。
 
-
 ### 5.5 自建客户端提问
+
 ```bash
 当前数据库基本信息，以及包含哪些表及表字段。
 ```
+
 终端给出的效果：
 ![](assets/db6a36a1.png)
