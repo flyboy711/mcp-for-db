@@ -32,8 +32,8 @@ class EnvDistributor:
         'dify': {
             'prefix': 'DIFY_',
             'env_file': 'dify.env',
-            'required_vars': {'DIFY_BASE_URL', 'DIFY_API_KEY', 'DIFY_DATASET_ID'},
-            'optional_vars': {'DIFY_TIMEOUT', 'DIFY_MAX_RETRIES'}
+            'required_vars': set(),
+            'optional_vars': {'DIFY_BASE_URL', 'DIFY_API_KEY', 'DIFY_DATASET_ID', 'DIFY_TIMEOUT', 'DIFY_MAX_RETRIES'}
         },
         'common': {
             'prefix': 'COMMON_',

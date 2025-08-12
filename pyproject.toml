@@ -1,6 +1,6 @@
 [project]
 name = "mcp_for_db"
-version = "1.0.0"
+version = "1.0.1"
 license = { text = "MIT" }
 description = "Multi-service MCP server supporting databases and AI services with FastAPI client"
 readme = "README.md"

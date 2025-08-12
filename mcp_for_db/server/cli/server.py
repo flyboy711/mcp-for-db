@@ -275,10 +275,29 @@ class AggregatedMCPServer:
             raise ValueError(f"未找到提示词: {name}")
 
         # 注册工具处理器
+        """
+        整体架构修改成了微服务式，启动微服务式客户端时一切正常，但在此处聚合的时候，会出现工具重复加载的问题导致工具数翻倍：
+        根因在于注册时采用的是全局共享模式自动注册，导致其他服务还会注册一遍，导致翻倍。由于工具不多，此处直接临时过滤去重了
+        """
+
         @self.aggregated_server.list_tools()
         async def list_tools() -> List[Tool]:
             all_tools = []
-            registered_tools = {}  # 用于存储已经注册的工具
+            registered_tools = set()  # 用于存储已经注册的工具
+
+            # 定义每个服务应该包含的工具
+            service_tool_mapping = {
+                "mysql": [
+                    "sql_executor", "get_query_logs", "switch_database", "collect_table_stats",
+                    "get_chinese_initials", "get_table_name", "get_table_desc", "get_table_index",
+                    "get_table_lock", "get_database_info", "get_database_tables", "get_table_stats",
+                    "check_table_constraints", "get_db_health_running", "get_db_health_index_usage",
+                    "get_process_list", "analyze_query_performance", "smart_tool"
+                ],
+                "dify": [
+                    "retrieve_knowledge", "diagnose_knowledge", "switch_dify_knowledge"
+                ]
+            }
 
             for service_name, sub_server in self.sub_servers.items():
                 try:
@@ -295,25 +314,29 @@ class AggregatedMCPServer:
                         else:
                             tools = tool_registry.get_all_tools()
 
-                        self.logger.debug(f"服务 {service_name} 获取到 {len(tools)} 个工具")
+                        # 过滤工具：只包含该服务应该有的工具
+                        allowed_tools = service_tool_mapping.get(service_name, [])
 
                         for tool in tools:
-                            prefixed_name = f"{service_name}:{tool.name}"
-                            if prefixed_name not in registered_tools:
-                                # 创建新的工具对象，避免修改原对象
-                                from mcp.types import Tool as MCPTool
-                                prefixed_tool = MCPTool(
-                                    name=prefixed_name,
-                                    description=tool.description,
-                                    inputSchema=tool.inputSchema
-                                )
-                                all_tools.append(prefixed_tool)
+                            original_name = tool.name
 
-                                registered_tools[prefixed_name] = {
-                                    'service': service_name,
-                                    'original_name': tool.name
-                                }
-                                self.logger.debug(f"注册工具: {tool.name}")
+                            # 只处理该服务应该包含的工具
+                            if original_name in allowed_tools:
+                                prefixed_name = f"{original_name}"
+
+                                if prefixed_name not in registered_tools:
+                                    # 创建新的工具对象，避免修改原对象
+                                    from mcp.types import Tool as MCPTool
+                                    prefixed_tool = MCPTool(
+                                        name=prefixed_name,
+                                        description=tool.description,
+                                        inputSchema=tool.inputSchema
+                                    )
+                                    all_tools.append(prefixed_tool)
+                                    registered_tools.add(prefixed_name)
+                                    self.logger.debug(f"注册工具: {prefixed_name}")
+                            else:
+                                self.logger.debug(f"跳过工具 {original_name}（不属于服务 {service_name}）")
                     else:
                         self.logger.warning(f"服务 {service_name} 的注册表没有 get_all_tools 方法")
 
@@ -325,63 +348,79 @@ class AggregatedMCPServer:
             self.logger.info(f"总共注册了 {len(all_tools)} 个工具")
             return all_tools
 
+        """
+        这里聚合的服务提供的工具直接是原始工具名，供cline这种客户端调用，而自实现的客户端工具格式为：ServerName_ToolName
+        """
+
         @self.aggregated_server.call_tool()
         async def call_tool(name: str, arguments: Dict[str, Any]) -> Sequence[TextContent]:
             self.logger.info(f"调用工具: {name}")
             self.logger.debug(f"工具参数: {arguments}")
 
             # 解析服务名称和工具名称
-            if ':' in name:
-                service_name, actual_name = name.split(':', 1)
-                self.logger.debug(f"解析工具调用: 服务={service_name}, 工具={actual_name}")
+            service_name = None
+            # 定义每个服务应该包含的工具
+            service_tool_mapping = {
+                "mysql": [
+                    "sql_executor", "get_query_logs", "switch_database", "collect_table_stats",
+                    "get_chinese_initials", "get_table_name", "get_table_desc", "get_table_index",
+                    "get_table_lock", "get_database_info", "get_database_tables", "get_table_stats",
+                    "check_table_constraints", "get_db_health_running", "get_db_health_index_usage",
+                    "get_process_list", "analyze_query_performance", "smart_tool"
+                ],
+                "dify": [
+                    "retrieve_knowledge", "diagnose_knowledge", "switch_dify_knowledge"
+                ]
+            }
 
-                if service_name in self.sub_servers:
-                    sub_server = self.sub_servers[service_name]
+            if name in service_tool_mapping.get("mysql", []):
+                service_name = "mysql"
 
-                    try:
-                        # 创建服务上下文
-                        # context = await self._create_service_context(service_name, sub_server)
-                        # async with context:
-                        tool_registry = sub_server.get_tool_registry()
+            if name in service_tool_mapping.get("dify", []):
+                service_name = "dify"
 
-                        if tool_registry is None:
-                            raise ValueError(f"服务 {service_name} 的工具注册表未初始化")
+            if service_name in self.sub_servers:
+                sub_server = self.sub_servers[service_name]
+                try:
+                    # 创建服务上下文
+                    # context = await self._create_service_context(service_name, sub_server)
+                    # async with context:
+                    tool_registry = sub_server.get_tool_registry()
 
-                        self.logger.debug(f"工具注册表类型: {type(tool_registry)}")
+                    if tool_registry is None:
+                        raise ValueError(f"服务 {service_name} 的工具注册表未初始化")
 
-                        if hasattr(tool_registry, 'get_tool'):
-                            if asyncio.iscoroutinefunction(tool_registry.get_tool):
-                                tool = await tool_registry.get_tool(actual_name)
-                            else:
-                                tool = tool_registry.get_tool(actual_name)
+                    self.logger.debug(f"工具注册表类型: {type(tool_registry)}")
 
-                            if tool is None:
-                                raise ValueError(f"在服务 {service_name} 中未找到工具: {actual_name}")
-
-                            self.logger.debug(f"找到工具: {actual_name}, 类型: {type(tool)}")
-
-                            # 执行工具
-                            result = await tool.run_tool(arguments)
-                            self.logger.info(f"工具 {name} 执行成功，返回 {len(result) if result else 0} 个结果")
-                            return result
+                    if hasattr(tool_registry, 'get_tool'):
+                        if asyncio.iscoroutinefunction(tool_registry.get_tool):
+                            tool = await tool_registry.get_tool(name)
                         else:
-                            raise ValueError(f"服务 {service_name} 的注册表没有 get_tool 方法")
+                            tool = tool_registry.get_tool(name)
 
-                    except Exception as e:
-                        self.logger.error(f"执行工具 {name} 失败: {e}")
-                        import traceback
-                        self.logger.debug(f"详细错误: {traceback.format_exc()}")
-                        # 返回错误信息而不是抛出异常
-                        return [TextContent(
-                            type="text",
-                            text=f"执行工具 {name} 时发生错误: {str(e)}"
-                        )]
-                else:
-                    error_msg = f"未找到服务: {service_name}，可用服务: {list(self.sub_servers.keys())}"
-                    self.logger.error(error_msg)
-                    return [TextContent(type="text", text=error_msg)]
+                        if tool is None:
+                            raise ValueError(f"在服务 {service_name} 中未找到工具: {name}")
+
+                        self.logger.debug(f"找到工具: {name}, 类型: {type(tool)}")
+
+                        # 执行工具
+                        result = await tool.run_tool(arguments)
+                        self.logger.info(f"工具 {name} 执行成功，返回 {len(result) if result else 0} 个结果")
+                        return result
+                    else:
+                        raise ValueError(f"服务 {service_name} 的注册表没有 get_tool 方法")
+
+                except Exception as e:
+                    self.logger.error(f"执行工具 {name} 失败: {e}")
+                    import traceback
+                    self.logger.debug(f"详细错误: {traceback.format_exc()}")
+                    # 返回错误信息而不是抛出异常
+                    return [TextContent(
+                        type="text",
+                        text=f"执行工具 {name} 时发生错误: {str(e)}"
+                    )]
             else:
-                error_msg = f"在所有服务中都未找到工具: {name}"
+                error_msg = f"未找到服务: {service_name}，可用服务: {list(self.sub_servers.keys())}"
                 self.logger.error(error_msg)
                 return [TextContent(type="text", text=error_msg)]
 
